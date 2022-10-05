@@ -1,6 +1,8 @@
 from enum import Enum
 
 from constants import RESOURCE
+from edge import Edge
+from vertex import Vertex
 
 
 class Tile:
@@ -11,7 +13,7 @@ class Tile:
     'LUMBER', 'ORE', 'WOOL'}.
     """
 
-    def __init__(self, q: int, r: int, resource: RESOURCE, dice_num: int) -> None:
+    def __init__(self, q: int, r: int, resource: RESOURCE, dice_num: int):
         self.q = q
         self.r = r
         self.s = -q - r

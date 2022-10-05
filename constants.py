@@ -1,21 +1,30 @@
-from enum import Enum
+from enum import IntEnum
 
 
-class RESOURCE(Enum):
-    BRICK = 1
-    GRAIN = 2
-    LUMBER = 3
-    ORE = 4
-    WOOL = 5
-    NONE = 6
+class RESOURCE(IntEnum):
+    BRICK = 0
+    GRAIN = 1
+    LUMBER = 2
+    ORE = 3
+    WOOL = 4
+    NONE = 5
 
 
-class DIRECTION(Enum):
-    NORTH = 1
-    NORTHWEST = 2
-    WEST = 3
-    SOUTHWEST = 4
-    SOUTH = 5
-    SOUTHEAST = 6
-    EAST = 7
-    NORTHEAST = 8
+class DIRECTION(IntEnum):
+    NORTH = 0
+    NORTHWEST = 1
+    WEST = 2
+    SOUTHWEST = 3
+    SOUTH = 4
+    SOUTHEAST = 5
+    EAST = 6
+    NORTHEAST = 7
+
+
+class PLAYERCOLOR(IntEnum):
+    RED = 0
+    BLUE = 1
+    WHITE = 2
+    YELLOW = 3
+    GREEN = 4
+    BROWN = 5
