@@ -13,12 +13,16 @@ class Tile:
     'LUMBER', 'ORE', 'WOOL'}.
     """
 
-    def __init__(self, q: int, r: int, resource: RESOURCE, dice_num: int):
-        self.q = q
-        self.r = r
-        self.s = -q - r
+    def __init__(self, resource: RESOURCE, dice_num: int):
+        self.q = -1
+        self.r = -1
         self.resource = resource
         self.dice_num = dice_num
+
+    def set_coords(self, q: int, r: int):
+        self.q = q
+        self.r = r
+        return self
 
     def get_coords(self) -> tuple:
         return self.q, self.r
