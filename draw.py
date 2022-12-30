@@ -1,8 +1,6 @@
 from math import sqrt
 from turtle import *
 
-from board import Board
-
 ROOT3_OVER_2 = sqrt(3) / 2
 
 FONT_SIZE = 18
@@ -52,14 +50,17 @@ def hexagon(turtle, radius, color):
     clone.setposition(xpos, ypos - FONT_SIZE / 2)
 
 
-def draw(board: Board) -> None:
+def draw(board) -> None:
     # Initialize the turtle
     tortoise = Turtle(visible=False)
     tortoise.speed('fastest')
     tortoise.penup()
 
-    coords = board.get_tile_coords()
-    resources = board.get_resources()
+    coords = list(board.get_tile_coords())
+    resources = []
+    for q, r, _ in coords:
+        if (tile := board.get_tile(q, r)) is not None:
+            resources.append(tile.resource)
     colors = [color_map[resource.value] for resource in resources]
 
     # Plot the points
@@ -72,4 +73,3 @@ def draw(board: Board) -> None:
     screen.tracer(False)
     screen.exitonclick()
     done()
-

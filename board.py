@@ -7,6 +7,8 @@ from edge import Edge
 from tile import Tile
 from vertex import Vertex
 
+import draw
+
 
 def generate_tiles(num_tiles: int) -> List[Tile]:
     """
@@ -44,7 +46,9 @@ def generate_board(n: int) -> tuple[List[List[Tile]], List[tuple[int]]]:
     tile_grid = [[None for j in range(2 * n + 1)] for i in range(2 * n + 1)]
     tile_coords = set()
     # fill in center row
-    tile_grid[n] = [tiles.pop().set_coords(i, n) for i in range(2 * n + 1)]
+    for i in range(2 * n + 1):
+        tile_grid[n][i] = tiles.pop().set_coords(i, n)
+        tile_coords.add((i, n, -i - n))
     # fill in everything above and below center row
     i = 1
     j = n - 1
@@ -53,11 +57,11 @@ def generate_board(n: int) -> tuple[List[List[Tile]], List[tuple[int]]]:
         tiles_lower = []
         for k in range(i, 2 * n + 1):
             tiles_upper.append(tiles.pop().set_coords(k, j))
-            tile_coords.add((k, j))
+            tile_coords.add((k, j, -k - j))
         tile_grid[j][i:] = tiles_upper
-        for k in range(2*n - i + 1):
-            tiles_lower.append(tiles.pop().set_coords(k, 2*n - j))
-            tile_coords.add((k, 2*n - j))
+        for k in range(2 * n - i + 1):
+            tiles_lower.append(tiles.pop().set_coords(k, 2 * n - j))
+            tile_coords.add((k, 2 * n - j, -k - 2 * n + j))
         tile_grid[2 * n - j][:2 * n - i + 1] = tiles_lower
         i += 1
         j -= 1
@@ -74,22 +78,21 @@ class Board:
         self.n = board_size
 
     def get_tile(self, q: int, r: int) -> Tile:
-        return self.tiles[r][q - max(0, self.n - r)]
+        return self.tiles[r][q - max(0, self.n - (2 * self.n + 1 - abs(self.n - r)))]
 
     def get_vertices_from_tile(self, tile: Tile) -> List[Vertex]:
         q, r = tile.get_coords()
         offset = q % 2
-        return [self.vertices[q][2*r + offset],
-                self.vertices[q][2*r + 1 + offset],
-                self.vertices[q][2*r + 2 + offset],
-                self.vertices[q + 1][2*r + offset],
-                self.vertices[q + 1][2*r + 1 + offset],
-                self.vertices[q + 1][2*r + 2 + offset]]
+        return [self.vertices[q][2 * r + offset],
+                self.vertices[q][2 * r + 1 + offset],
+                self.vertices[q][2 * r + 2 + offset],
+                self.vertices[q + 1][2 * r + offset],
+                self.vertices[q + 1][2 * r + 1 + offset],
+                self.vertices[q + 1][2 * r + 2 + offset]]
 
     def get_tile_coords(self) -> set[tuple[int]]:
         return self.tile_coords
 
 
-
-
-
+b = Board(5)
+draw.draw(b)
