@@ -33,7 +33,7 @@ def hex_to_rect(coord):
     return x * SIDE, y * SIDE
 
 
-def hexagon(turtle, radius, color):
+def hexagon(turtle, radius, color, coord_label):
     clone = turtle.clone()  # so we don't affect turtle's state
     xpos, ypos = clone.position()
     clone.setposition(xpos - radius / 2, ypos - ROOT3_OVER_2 * radius)
@@ -47,6 +47,10 @@ def hexagon(turtle, radius, color):
         clone.left(60)
     clone.end_fill()
     clone.penup()
+    clone.left(60)
+    clone.forward(SIDE)
+    clone.write("(" + str(coord_label[0]) + ", " + str(coord_label[1]) + ")")
+    clone.backward(SIDE)
     clone.setposition(xpos, ypos - FONT_SIZE / 2)
 
 
@@ -66,7 +70,7 @@ def draw(board) -> None:
     # Plot the points
     for hexcoord, color in zip(coords, colors):
         tortoise.goto(hex_to_rect(hexcoord))
-        hexagon(tortoise, SIDE, color)
+        hexagon(tortoise, SIDE, color, hexcoord)
 
     # Wait for the user to close the window
     screen = Screen()

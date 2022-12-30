@@ -18,6 +18,7 @@ class Tile:
         self.r = -1
         self.resource = resource
         self.dice_num = dice_num
+        self.vertices = set()
 
     def set_coords(self, q: int, r: int):
         self.q = q
@@ -26,3 +27,18 @@ class Tile:
 
     def get_coords(self) -> tuple:
         return self.q, self.r
+
+    def get_dice_num(self) -> int:
+        return self.dice_num
+
+    def set_vertices(self, vertices: set[Vertex]):
+        """
+        Invoked through board.py for initialization purposes.
+        """
+        self.vertices = vertices
+
+    def handle_production(self):
+        """
+        Invoked when this tile produces resources. Adjusts player resource accounts accordingly.
+        """
+        raise NotImplementedError()
