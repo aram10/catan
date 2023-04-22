@@ -7,7 +7,8 @@ class RESOURCE(IntEnum):
     LUMBER = 2
     ORE = 3
     WOOL = 4
-    NONE = 5
+    DESERT = 5
+    WATER = 6
 
 
 class DIRECTION(IntEnum):

@@ -13,14 +13,14 @@ class Tile:
     'LUMBER', 'ORE', 'WOOL'}.
     """
 
-    def __init__(self, resource: RESOURCE, dice_num: int, is_water_tile: bool = False):
+    def __init__(self):
         self.q = -1
         self.r = -1
-        self.resource = resource
-        self.dice_num = dice_num
+        self.resource = None
+        self.dice_num = -1
         self.vertices = set()
         self.robber = False
-        self.is_water_tile = is_water_tile
+        self.is_water_tile = False
 
     def __hash__(self):
         return hash((self.q, self.r, self.resource, self.dice_num))
@@ -45,6 +45,9 @@ class Tile:
     def get_dice_num(self) -> int:
         return self.dice_num
 
+    def set_dice_num(self, dice_num: int):
+        self.dice_num = dice_num
+
     def get_vertices(self) -> set[Vertex]:
         return self.vertices
 
@@ -56,6 +59,9 @@ class Tile:
 
     def get_resource(self) -> RESOURCE:
         return self.resource
+
+    def set_resource(self, resource: RESOURCE):
+        self.resource = resource
 
     def place_robber(self):
         self.robber = True

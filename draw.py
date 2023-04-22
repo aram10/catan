@@ -1,3 +1,4 @@
+import math
 from math import sqrt
 from turtle import *
 
@@ -8,6 +9,7 @@ FONT = ('Arial', FONT_SIZE, 'normal')
 
 # the scale used for drawing
 SIDE = 50
+R = SIDE / (2 * math.sin(math.pi / 6))
 
 COLOR_BRICK = "#AA4A44"
 COLOR_GRAIN = "#F7D108"
@@ -35,10 +37,9 @@ def hex_to_rect(coord):
     return x * SIDE, y * SIDE
 
 
-def hexagon(turtle, radius, color, coord_label):
+def hexagon(turtle, radius, color, coord_label, dice_num):
     clone = turtle.clone()  # so we don't affect turtle's state
     xpos, ypos = clone.position()
-    clone.setposition(xpos - radius / 2, ypos - ROOT3_OVER_2 * radius)
     clone.setheading(-30)
     clone.color('black', color)
     clone.pendown()
@@ -50,10 +51,9 @@ def hexagon(turtle, radius, color, coord_label):
     clone.end_fill()
     clone.penup()
     clone.left(60)
-    clone.forward(SIDE)
-    clone.write("(" + str(coord_label[0]) + ", " + str(coord_label[1]) + ")")
-    clone.backward(SIDE)
-    clone.setposition(xpos, ypos - FONT_SIZE / 2)
+    clone.forward(SIDE*ROOT3_OVER_2)
+    if dice_num != -1:
+        clone.write(str(dice_num), align="center", font=("Arial", 15, "normal"))
 
 
 def draw(board) -> None:
@@ -70,9 +70,14 @@ def draw(board) -> None:
     colors = [color_map[resource.value] for resource in resources]
 
     # Plot the points
+    x_off, y_off = hex_to_rect((board.board_size,board.board_size,-2*board.board_size))
+    y_off += ROOT3_OVER_2 * SIDE
+    x_off -= SIDE / 2
     for hexcoord, color in zip(coords, colors):
-        tortoise.goto(hex_to_rect(hexcoord))
-        hexagon(tortoise, SIDE, color, hexcoord)
+        pos = hex_to_rect(hexcoord)
+        pos = (pos[0] - x_off, pos[1] - y_off)
+        tortoise.goto(pos)
+        hexagon(tortoise, SIDE, color, hexcoord, board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
 
     # Wait for the user to close the window
     screen = Screen()
