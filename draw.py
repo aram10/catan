@@ -1,4 +1,5 @@
 import math
+import turtle
 from math import sqrt
 from turtle import *
 
@@ -61,6 +62,9 @@ def draw(board) -> None:
     tortoise = Turtle(visible=False)
     tortoise.speed('fastest')
     tortoise.penup()
+
+    screen = turtle.Screen()
+    screen.tracer(0,0)
 
     coords = list(board.get_tile_coords())
     resources = []
