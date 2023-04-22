@@ -20,6 +20,7 @@ class Vertex:
         self.player_building_id = player_building_id
 
     def upgrade_to_city(self) -> bool:
-        if self.player_building_id == -1:
-            raise FailedBuildError("Cannot build a city without first building a settlement.")
         self.is_city = True
+
+    def is_city(self) -> bool:
+        return self.is_city

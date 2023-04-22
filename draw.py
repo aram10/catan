@@ -15,6 +15,7 @@ COLOR_LUMBER = "#228B22"
 COLOR_ORE = "#888C8D"
 COLOR_WOOL = "#7FC33F"
 COLOR_DESERT = "#D7B278"
+COLOR_WATER = "#0066FF"
 
 color_map = {
     0: COLOR_BRICK,
@@ -22,7 +23,8 @@ color_map = {
     2: COLOR_LUMBER,
     3: COLOR_ORE,
     4: COLOR_WOOL,
-    5: COLOR_DESERT
+    5: COLOR_DESERT,
+    6: COLOR_WATER
 }
 
 

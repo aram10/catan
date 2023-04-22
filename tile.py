@@ -13,12 +13,20 @@ class Tile:
     'LUMBER', 'ORE', 'WOOL'}.
     """
 
-    def __init__(self, resource: RESOURCE, dice_num: int):
+    def __init__(self, resource: RESOURCE, dice_num: int, is_water_tile: bool = False):
         self.q = -1
         self.r = -1
         self.resource = resource
         self.dice_num = dice_num
         self.vertices = set()
+        self.robber = False
+        self.is_water_tile = is_water_tile
+
+    def __hash__(self):
+        return hash((self.q, self.r, self.resource, self.dice_num))
+
+    def __eq__(self, other):
+        return isinstance(other, Tile) and self.q == other.q and self.r == other.r
 
     def set_coords(self, q: int, r: int):
         self.q = q
@@ -28,8 +36,17 @@ class Tile:
     def get_coords(self) -> tuple:
         return self.q, self.r
 
+    def get_q(self) -> int:
+        return self.q
+
+    def get_r(self) -> int:
+        return self.r
+
     def get_dice_num(self) -> int:
         return self.dice_num
+
+    def get_vertices(self) -> set[Vertex]:
+        return self.vertices
 
     def set_vertices(self, vertices: set[Vertex]):
         """
@@ -37,8 +54,14 @@ class Tile:
         """
         self.vertices = vertices
 
-    def handle_production(self):
-        """
-        Invoked when this tile produces resources. Adjusts player resource accounts accordingly.
-        """
-        raise NotImplementedError()
+    def get_resource(self) -> RESOURCE:
+        return self.resource
+
+    def place_robber(self):
+        self.robber = True
+
+    def remove_robber(self):
+        self.robber = False
+
+    def has_robber(self) -> bool:
+        return self.robber

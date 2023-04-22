@@ -3,7 +3,6 @@ import uuid
 from constants import RESOURCE, PLAYERCOLOR
 from edge import Edge
 from vertex import Vertex
-from board import get_edges_from_vertex
 
 
 class Player:
@@ -18,6 +17,11 @@ class Player:
         self.settlements = 0
         self.cities = 0
         self.buildings = set()
+        self.has_largest_army = False
+        self.has_longest_road = False
+
+    def get_player_id(self) -> int:
+        return self.id
 
     def get_resource_count(self, r: RESOURCE):
         return self.resources[r.value]
@@ -37,7 +41,6 @@ class Player:
         :return: Whether the player may build here.
         """
         edges = [get_edges_from_vertex(vertex)]
-
 
     def can_build_settlement(self) -> bool:
         """
@@ -75,3 +78,38 @@ class Player:
         self.victory_points += 1
         self.resources[RESOURCE.GRAIN] -= 2
         self.resources[RESOURCE.ORE] -= 3
+
+    def give_largest_army(self):
+        self.has_largest_army = True
+        self.victory_points += 2
+
+    def remove_largest_army(self):
+        self.has_largest_army = False
+        self.victory_points -= 2
+
+    def give_longest_road(self):
+        self.has_longest_road = True
+        self.victory_points += 2
+
+    def remove_longest_road(self):
+        self.has_longest_road = False
+        self.victory_points -= 2
+
+    def give_resource(self, resource: RESOURCE, amt: int):
+        self.resources[resource] += amt
+
+    def take_resource(self, resource: RESOURCE, amt: int):
+        self.resources[resource] -= amt
+
+    def get_available_resources(self) -> set[RESOURCE]:
+        resources = set()
+        for i in range(5):
+            if self.resources[i] > 0:
+                resources.add(RESOURCE(i))
+        return resources
+
+    def __hash__(self):
+        return hash(self.id)
+
+    def __eq__(self, other):
+        return isinstance(other, Player) and self.id == other.get_player_id()
