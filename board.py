@@ -3,6 +3,10 @@ import random
 from random import shuffle, sample
 from typing import List, TYPE_CHECKING, Tuple, Set, Dict
 
+import numpy as np
+
+import constants
+
 if TYPE_CHECKING:
     import player
 
@@ -21,7 +25,7 @@ def generate_resources_and_chits(num_tiles: int) -> List[Tuple[RESOURCE, int]]:
     :param num_tiles: Number of tiles to get resources/chits.
     :return: List of (resource, chit_value) tuples.
     """
-    chits = ([2] + list(range(3, 12)) * 2 + [12]) * ((num_tiles // 20) + 1)
+    chits = ([2] + (list(range(3, 7)) + list(range(8, 12))) * 2 + [12]) * ((num_tiles // 19) + 1)
     shuffle(chits)
     base_resources = [RESOURCE.BRICK, RESOURCE.GRAIN, RESOURCE.LUMBER, RESOURCE.ORE, RESOURCE.WOOL]
     resources = base_resources * ((num_tiles // len(base_resources)) + 1)
@@ -75,16 +79,23 @@ class Board:
         num_tiles = 1 + sum([6 * i for i in range(1, board_size + 1)])
         self.tiles, self.tile_coords = generate_board(board_size)
         # only generate resources/chits for non-water tiles
-        tile_data = generate_resources_and_chits(num_tiles - 6*board_size)
+        tile_data = generate_resources_and_chits(num_tiles - 6 * board_size)
+        remaining_chits = [2, 3, 4, 5, 9, 10, 11, 12]
         for coord in self.tile_coords:
             tile = self.get_tile(coord[0], coord[1])
             # if tile is on outer edge (i.e., water tile), don't give it resource/chit
-            if coord[0] == 0 or coord[0] == 2*board_size or coord[1] == 0 or coord[1] == 2*board_size or coord[0] + coord[1] == board_size or coord[0] + coord[1] == 3*board_size:
+            if coord[0] == 0 or coord[0] == 2 * board_size or coord[1] == 0 or coord[1] == 2 * board_size or coord[0] + \
+                    coord[1] == board_size or coord[0] + coord[1] == 3 * board_size:
                 tile.set_resource(RESOURCE.WATER)
-            else:
-                resource, chit_val = tile_data.pop()
-                tile.set_resource(resource)
-                tile.set_dice_num(chit_val)
+                continue
+            resource, chit_val = tile_data.pop()
+            if resource != RESOURCE.DESERT:
+                # enforce rule that there are no 8-8, 6-6, or 8-6 connections
+                neighbor_rolls = {x.get_dice_num() for x in self.get_neighboring_tiles(tile)}
+                if 6 in neighbor_rolls or 8 in neighbor_rolls:
+                    chit_val = remaining_chits[np.where(np.random.multinomial(1, constants.CHIT_DIST_MOD) == 1)[0][0]]
+            tile.set_resource(resource)
+            tile.set_dice_num(chit_val)
         # Note that edges have their own coordinate system while vertices are defined by their incident tiles
         self.edges = [[Edge(i, j) for j in range(2 * num_tiles + 2)] for i in range(2 * num_tiles + 2)]
 

@@ -54,7 +54,8 @@ def hexagon(turtle, radius, color, coord_label, dice_num):
     clone.left(60)
     clone.forward(SIDE*ROOT3_OVER_2)
     if dice_num != -1:
-        clone.write(str(dice_num), align="center", font=("Arial", 15, "normal"))
+        clone.color('red' if dice_num in {6,8} else 'black')
+        clone.write(str(dice_num), align="center", font=("Arial", SIDE//2, "normal"))
 
 
 def draw(board) -> None:
