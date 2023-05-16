@@ -48,7 +48,7 @@ class TestTileAndEdgeNeighbors(unittest.TestCase):
             for tile in row:
                 if not tile:
                     continue
-                vertex_set = b.get_vertices_from_tile(tile)
+                vertex_set = tile.get_vertices()
                 neighbor_tile_set = set.intersection(*[b.get_tiles_from_vertex(v) for v in vertex_set])
                 print(neighbor_tile_set)
                 try:

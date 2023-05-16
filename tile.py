@@ -1,8 +1,8 @@
 from enum import Enum
+from typing import Tuple, Set
 
 from constants import RESOURCE
 from edge import Edge
-from vertex import Vertex
 
 
 class Tile:
@@ -18,12 +18,12 @@ class Tile:
         self.r = -1
         self.resource = None
         self.dice_num = -1
-        self.vertices = set()
+        self.vertices = None
         self.robber = False
         self.is_water_tile = False
 
     def __hash__(self):
-        return hash((self.q, self.r, self.resource, self.dice_num))
+        return hash((self.q, self.r, self.resource))
 
     def __eq__(self, other):
         return isinstance(other, Tile) and self.q == other.q and self.r == other.r
@@ -33,7 +33,7 @@ class Tile:
         self.r = r
         return self
 
-    def get_coords(self) -> tuple:
+    def get_coords(self) -> Tuple[int]:
         return self.q, self.r
 
     def get_q(self) -> int:
@@ -48,10 +48,10 @@ class Tile:
     def set_dice_num(self, dice_num: int):
         self.dice_num = dice_num
 
-    def get_vertices(self) -> set[Vertex]:
+    def get_vertices(self) -> Set['Vertex']:
         return self.vertices
 
-    def set_vertices(self, vertices: set[Vertex]):
+    def set_vertices(self, vertices: Set['Vertex']):
         """
         Invoked through board.py for initialization purposes.
         """

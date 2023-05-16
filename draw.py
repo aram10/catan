@@ -1,7 +1,10 @@
 import math
 import turtle
+import tkinter
 from math import sqrt
 from turtle import *
+
+from PIL import Image, ImageTk
 
 ROOT3_OVER_2 = sqrt(3) / 2
 
@@ -83,6 +86,10 @@ def draw(board) -> None:
         pos = (pos[0] - x_off, pos[1] - y_off)
         tortoise.goto(pos)
         hexagon(tortoise, SIDE, color, hexcoord, board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
+
+    #img = Image.open("sprites/test.png").resize((64,64), Image.ANTIALIAS)
+    #img = ImageTk.PhotoImage(img)
+    #screen.getcanvas().create_image((0,0), image=img)
 
     # Wait for the user to close the window
     screen = Screen()

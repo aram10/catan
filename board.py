@@ -1,7 +1,10 @@
+import itertools
 import math
 import random
+from collections import defaultdict
 from random import shuffle, sample
-from typing import List, TYPE_CHECKING, Tuple, Set, Dict
+from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable
+import networkx as nx
 
 import numpy as np
 
@@ -75,9 +78,14 @@ def generate_board(n: int) -> tuple[List[List[Tile]], List[tuple[int]]]:
 class Board:
 
     def __init__(self, board_size: int):
+        # TODO: Cache boards for re-use
         self.board_size = board_size
         num_tiles = 1 + sum([6 * i for i in range(1, board_size + 1)])
         self.tiles, self.tile_coords = generate_board(board_size)
+        # models vertices of tiles and adjacent vertices
+        self.vertex_graph = nx.Graph()
+        # holds actual Vertex objects referred to by the graph
+        self.vertex_objects = {}
         # only generate resources/chits for non-water tiles
         tile_data = generate_resources_and_chits(num_tiles - 6 * board_size)
         remaining_chits = [2, 3, 4, 5, 9, 10, 11, 12]
@@ -87,23 +95,68 @@ class Board:
             if coord[0] == 0 or coord[0] == 2 * board_size or coord[1] == 0 or coord[1] == 2 * board_size or coord[0] + \
                     coord[1] == board_size or coord[0] + coord[1] == 3 * board_size:
                 tile.set_resource(RESOURCE.WATER)
-                continue
-            resource, chit_val = tile_data.pop()
-            if resource != RESOURCE.DESERT:
-                # enforce rule that there are no 8-8, 6-6, or 8-6 connections
-                neighbor_rolls = {x.get_dice_num() for x in self.get_neighboring_tiles(tile)}
-                if 6 in neighbor_rolls or 8 in neighbor_rolls:
-                    chit_val = remaining_chits[np.where(np.random.multinomial(1, constants.CHIT_DIST_MOD) == 1)[0][0]]
-            tile.set_resource(resource)
-            tile.set_dice_num(chit_val)
+            else:
+                resource, chit_val = tile_data.pop()
+                if resource != RESOURCE.DESERT:
+                    # enforce rule that there are no 8-8, 6-6, or 8-6 connections
+                    neighbor_rolls = {x.get_dice_num() for x in self.get_neighboring_tiles(tile)}
+                    if 6 in neighbor_rolls or 8 in neighbor_rolls:
+                        chit_val = remaining_chits[
+                            np.where(np.random.multinomial(1, constants.CHIT_DIST_MOD) == 1)[0][0]]
+                tile.set_resource(resource)
+                tile.set_dice_num(chit_val)
+            self.vertex_graph.add_node(tile)
+        # create vertices and add them to the graph
+        for tile in self.get_tiles():
+            self.link_tile_and_vertices(tile)
         # Note that edges have their own coordinate system while vertices are defined by their incident tiles
         self.edges = [[Edge(i, j) for j in range(2 * num_tiles + 2)] for i in range(2 * num_tiles + 2)]
+
+    def link_tile_and_vertices(self, tile: Tile):
+        """
+        Invoked during board creation. A Tile has 6 vertices (we will ignore 2 or 3 of them if tile is water tile).
+        Each of these vertices is uniquely defined by 3 tiles (resource or otherwise).
+        Given a Tile, this method links vertices in the graph to their incident tiles and to adjacent vertices.
+
+        Side effects: new vertices added to graph, new vertex objects created, and adjacent vertices in graph linked.
+
+        :param tile: The Tile object to get vertices for.
+        """
+        vertices = set()
+        neighbors = self.get_neighboring_tiles(tile)
+        tile_coords = tile.get_coords()
+        for n1 in neighbors:
+            n1_neighbors = self.get_neighboring_tiles(n1)
+            n2_neighbors = list(neighbors.intersection(n1_neighbors))
+            assert (len(n2_neighbors) == 2 or len(n2_neighbors) == 1)
+            # neighboring tiles share 2 common neighbors (if neither are corner water tiles)
+            # defines two vertices connected by an edge - add this connection to the graph
+            t1 = n2_neighbors[0]
+            v1 = frozenset({tile_coords, n1.get_coords(), t1.get_coords()})
+            vertices.add(v1)
+            if v1 not in self.vertex_graph:
+                self.vertex_graph.add_node(v1)
+                self.vertex_objects[v1] = Vertex(v1)
+            self.vertex_graph.add_edge(tile, v1)
+            if len(n2_neighbors) == 2:
+                t2 = n2_neighbors[1]
+                v2 = frozenset({tile_coords, n1.get_coords(), t2.get_coords()})
+                vertices.add(v2)
+                if v2 not in self.vertex_graph:
+                    self.vertex_graph.add_node(v2)
+                    self.vertex_objects[v2] = Vertex(v2)
+                self.vertex_graph.add_edge(tile, v2)
+                self.vertex_graph.add_edge(v1, v2)
+        tile.set_vertices({self.vertex_objects[v] for v in vertices})
 
     def get_tile(self, q: int, r: int) -> Tile:
         try:
             return self.tiles[r][q - max(0, self.board_size - (2 * self.board_size + 1 - abs(self.board_size - r)))]
         except IndexError:
             return None
+
+    def get_tiles(self) -> Iterable[Tile]:
+        return iter(tile for row in self.tiles for tile in row if tile is not None)
 
     def get_edges_from_tile(self, tile: Tile) -> set[Edge]:
         q, r = tile.get_coords()
@@ -194,5 +247,5 @@ class Board:
 
 
 if __name__ == '__main__':
-    b = Board(5)
+    b = Board(4)
     draw.draw(b)
