@@ -40,7 +40,7 @@ def generate_resources_and_chits(num_tiles: int) -> List[Tuple[RESOURCE, int]]:
     return tile_data
 
 
-def generate_board(n: int) -> tuple[List[List[Tile]], List[tuple[int]]]:
+def generate_board(n: int) -> Tuple[List[List[Tile]], List[Tuple[int]]]:
     """
     Fill in board with generated tiles.
 
@@ -75,6 +75,23 @@ def generate_board(n: int) -> tuple[List[List[Tile]], List[tuple[int]]]:
     return tile_grid, tile_coords
 
 
+def get_edge_coords_from_tile(tile: Tile) -> Set[Tuple[int, int]]:
+    q, r = tile.get_coords()
+    return {(2 * q, 2 * r - 1),
+            (2 * q + 1, 2 * r - 1),
+            (2 * q + 1, 2 * r),
+            (2 * q, 2 * r + 1),
+            (2 * q - 1, 2 * r + 1),
+            (2 * q - 1, 2 * r)}
+
+
+def get_shared_edge_coords(t1: Tile, t2: Tile) -> Tuple[int, int]:
+    res = get_edge_coords_from_tile(t1).intersection(get_edge_coords_from_tile(t2))
+    if len(res) != 1:
+        return None
+    return list(res)[0]
+
+
 class Board:
 
     def __init__(self, board_size: int):
@@ -82,8 +99,10 @@ class Board:
         self.board_size = board_size
         num_tiles = 1 + sum([6 * i for i in range(1, board_size + 1)])
         self.tiles, self.tile_coords = generate_board(board_size)
-        # models vertices of tiles and adjacent vertices
+        # models adjacent vertices (i.e., edges)
         self.vertex_graph = nx.Graph()
+        # models tile-vertex relations
+        self.tile_graph = nx.Graph()
         # holds actual Vertex objects referred to by the graph
         self.vertex_objects = {}
         # only generate resources/chits for non-water tiles
@@ -105,7 +124,7 @@ class Board:
                             np.where(np.random.multinomial(1, constants.CHIT_DIST_MOD) == 1)[0][0]]
                 tile.set_resource(resource)
                 tile.set_dice_num(chit_val)
-            self.vertex_graph.add_node(tile)
+            self.tile_graph.add_node(tile)
         # create vertices and add them to the graph
         for tile in self.get_tiles():
             self.link_tile_and_vertices(tile)
@@ -122,6 +141,7 @@ class Board:
 
         :param tile: The Tile object to get vertices for.
         """
+        attrs = {}
         vertices = set()
         neighbors = self.get_neighboring_tiles(tile)
         tile_coords = tile.get_coords()
@@ -136,17 +156,23 @@ class Board:
             vertices.add(v1)
             if v1 not in self.vertex_graph:
                 self.vertex_graph.add_node(v1)
+                self.tile_graph.add_node(v1)
                 self.vertex_objects[v1] = Vertex(v1)
-            self.vertex_graph.add_edge(tile, v1)
+            self.tile_graph.add_edge(tile, v1)
             if len(n2_neighbors) == 2:
                 t2 = n2_neighbors[1]
                 v2 = frozenset({tile_coords, n1.get_coords(), t2.get_coords()})
                 vertices.add(v2)
                 if v2 not in self.vertex_graph:
                     self.vertex_graph.add_node(v2)
+                    self.tile_graph.add_node(v1)
                     self.vertex_objects[v2] = Vertex(v2)
-                self.vertex_graph.add_edge(tile, v2)
+                self.tile_graph.add_edge(tile, v2)
                 self.vertex_graph.add_edge(v1, v2)
+                shared_edge_coords = get_shared_edge_coords(tile, n1)
+                assert (shared_edge_coords is not None)
+                attrs[(v1, v2)] = {'obj': shared_edge_coords}
+        nx.set_edge_attributes(self.vertex_graph, attrs)
         tile.set_vertices({self.vertex_objects[v] for v in vertices})
 
     def get_tile(self, q: int, r: int) -> Tile:
@@ -158,16 +184,7 @@ class Board:
     def get_tiles(self) -> Iterable[Tile]:
         return iter(tile for row in self.tiles for tile in row if tile is not None)
 
-    def get_edges_from_tile(self, tile: Tile) -> set[Edge]:
-        q, r = tile.get_coords()
-        return {self.edges[2 * q][2 * r - 1],
-                self.edges[2 * q + 1][2 * r - 1],
-                self.edges[2 * q + 1][2 * r],
-                self.edges[2 * q][2 * r + 1],
-                self.edges[2 * q - 1][2 * r + 1],
-                self.edges[2 * q - 1][2 * r]}
-
-    def get_neighboring_tiles(self, tile: Tile) -> set[Tile]:
+    def get_neighboring_tiles(self, tile: Tile) -> Set[Tile]:
         res = set()
         coords = tile.get_coords()
         q, r = coords[0], coords[1]
@@ -185,33 +202,11 @@ class Board:
             res.add(t6)
         return res.difference({tile})
 
-    """
-    This method serves as a sanity check that the results are the same
-    as get_neighboring_tiles(). Otherwise it would be dumb to use this.
-    """
+    def get_edges_from_tile(self, tile: Tile) -> Set[Edge]:
+        q, r = tile.get_coords()
+        return {self.edges[x][y] for (x, y) in get_edge_coords_from_tile(tile)}
 
-    def get_neighboring_tiles_using_vertices(self, tile: Tile) -> set[Tile]:
-        neighbors = set()
-        vertices = self.get_vertices_from_tile(tile)
-        for vertex in vertices:
-            neighbors = neighbors.union({x.get_coords() for x in self.get_tiles_from_vertex(vertex)})
-        return neighbors.difference({(tile.get_q(), tile.get_r())})
-
-    """
-    Same idea as above.
-    """
-
-    def get_neighboring_tiles_using_edges(self, tile: Tile) -> set[Tile]:
-        neighbors = set()
-        edges = self.get_edges_from_tile(tile)
-        for tilerow in self.tiles:
-            for t in tilerow:
-                if t is not None:
-                    if len(edges.intersection(self.get_edges_from_tile(t))) != 0:
-                        neighbors = neighbors.union({t})
-        return neighbors.difference({tile})
-
-    def get_tile_coords(self) -> set[tuple[int]]:
+    def get_tile_coords(self) -> Set[Tuple[int]]:
         return self.tile_coords
 
     def get_tiles_with_chit(self, chit: int) -> List[Tile]:
@@ -221,7 +216,7 @@ class Board:
         :return: A list of tiles.
         """
         res = []
-        for tile in self.tiles:
+        for tile in self.get_tiles():
             if tile.get_dice_num() == chit:
                 res.append(tile)
         return res
@@ -239,10 +234,9 @@ class Board:
 
     def get_desert_tiles(self) -> set[Tile]:
         tiles = set()
-        for tile_row in self.tiles:
-            for tile in tile_row:
-                if tile.get_resource() == RESOURCE.NONE:
-                    tiles.add(tile)
+        for tile in self.get_tiles():
+            if tile.get_resource() == RESOURCE.DESERT:
+                tiles.add(tile)
         return tiles
 
 
