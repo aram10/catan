@@ -203,7 +203,6 @@ class Board:
         return res.difference({tile})
 
     def get_edges_from_tile(self, tile: Tile) -> Set[Edge]:
-        q, r = tile.get_coords()
         return {self.edges[x][y] for (x, y) in get_edge_coords_from_tile(tile)}
 
     def get_tile_coords(self) -> Set[Tuple[int]]:
@@ -232,14 +231,20 @@ class Board:
             r = random.randint(0, 2 * self.board_size)
         return tile
 
-    def get_desert_tiles(self) -> set[Tile]:
+    def get_desert_tiles(self) -> Set[Tile]:
         tiles = set()
         for tile in self.get_tiles():
             if tile.get_resource() == RESOURCE.DESERT:
                 tiles.add(tile)
         return tiles
 
+    def get_tiles_from_vertex(self, v: Vertex) -> Set[Tile]:
+        return set(self.tile_graph.adj[v.vertex_id])
+
+    def get_vertices_from_tile(self, t: Tile) -> Set[Vertex]:
+        return set(self.vertex_objects[x] for x in self.tile_graph.adj[t])
+
 
 if __name__ == '__main__':
-    b = Board(4)
+    b = Board(3)
     draw.draw(b)
