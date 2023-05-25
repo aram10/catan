@@ -1,7 +1,7 @@
 import itertools
 import math
 import random
-from collections import defaultdict
+from collections import defaultdict, deque
 from random import shuffle, sample
 from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable
 import networkx as nx
@@ -9,6 +9,7 @@ import networkx as nx
 import numpy as np
 
 import constants
+from port import Port
 
 if TYPE_CHECKING:
     import player
@@ -126,54 +127,113 @@ class Board:
                 tile.set_dice_num(chit_val)
             self.tile_graph.add_node(tile)
         # create vertices and add them to the graph
+        tiles = []
         for tile in self.get_tiles():
-            self.link_tile_and_vertices(tile)
+            vertices = self.__link_tile_and_vertices(tile)
+            tiles.append((tile, vertices))
+        self.__add_port_objects()
+        # port objects (which are vertices) aren't actually initialized until __add_port_objects()
+        # this is why we have to delay setting a tile's vertices
+        for el in tiles:
+            tile, vertices = el
+            tile.set_vertices({self.vertex_objects[v] for v in vertices})
         # Note that edges have their own coordinate system while vertices are defined by their incident tiles
         self.edges = [[Edge(i, j) for j in range(2 * num_tiles + 2)] for i in range(2 * num_tiles + 2)]
 
-    def link_tile_and_vertices(self, tile: Tile):
+    def __link_tile_and_vertices(self, tile: Tile) -> Set[Vertex]:
         """
         Invoked during board creation. A Tile has 6 vertices (we will ignore 2 or 3 of them if tile is water tile).
         Each of these vertices is uniquely defined by 3 tiles (resource or otherwise).
         Given a Tile, this method links vertices in the graph to their incident tiles and to adjacent vertices.
 
-        Side effects: new vertices added to graph, new vertex objects created, and adjacent vertices in graph linked.
-
-        :param tile: The Tile object to get vertices for.
+        Side effects: new vertices added to graph, new vertex/port objects created, and adjacent vertices in graph linked.
         """
         attrs = {}
         vertices = set()
         neighbors = self.get_neighboring_tiles(tile)
         tile_coords = tile.get_coords()
+        tile_shore = (tile.get_resource() == RESOURCE.WATER)
         for n1 in neighbors:
+            n1_shore = (n1.get_resource() == RESOURCE.WATER)
             n1_neighbors = self.get_neighboring_tiles(n1)
             n2_neighbors = list(neighbors.intersection(n1_neighbors))
             assert (len(n2_neighbors) == 2 or len(n2_neighbors) == 1)
             # neighboring tiles share 2 common neighbors (if neither are corner water tiles)
             # defines two vertices connected by an edge - add this connection to the graph
             t1 = n2_neighbors[0]
+            t1_shore = (t1.get_resource() == RESOURCE.WATER)
             v1 = frozenset({tile_coords, n1.get_coords(), t1.get_coords()})
             vertices.add(v1)
             if v1 not in self.vertex_graph:
-                self.vertex_graph.add_node(v1)
-                self.tile_graph.add_node(v1)
-                self.vertex_objects[v1] = Vertex(v1)
+                shore = (tile_shore or n1_shore or t1_shore)
+                self.vertex_graph.add_node(v1, on_shore=shore)
+                self.tile_graph.add_node(v1, on_shore=shore)
+                if not shore:
+                    self.vertex_objects[v1] = Vertex(v1)
             self.tile_graph.add_edge(tile, v1)
             if len(n2_neighbors) == 2:
                 t2 = n2_neighbors[1]
+                t2_shore = (t2.get_resource() == RESOURCE.WATER)
                 v2 = frozenset({tile_coords, n1.get_coords(), t2.get_coords()})
                 vertices.add(v2)
                 if v2 not in self.vertex_graph:
-                    self.vertex_graph.add_node(v2)
-                    self.tile_graph.add_node(v1)
-                    self.vertex_objects[v2] = Vertex(v2)
+                    shore = (tile_shore or n1_shore or t2_shore)
+                    self.vertex_graph.add_node(v2, on_shore=shore)
+                    self.tile_graph.add_node(v2, on_shore=shore)
+                    if not shore:
+                        self.vertex_objects[v2] = Vertex(v2)
                 self.tile_graph.add_edge(tile, v2)
                 self.vertex_graph.add_edge(v1, v2)
                 shared_edge_coords = get_shared_edge_coords(tile, n1)
                 assert (shared_edge_coords is not None)
                 attrs[(v1, v2)] = {'obj': shared_edge_coords}
         nx.set_edge_attributes(self.vertex_graph, attrs)
-        tile.set_vertices({self.vertex_objects[v] for v in vertices})
+        return vertices
+
+    def __add_port_objects(self):
+        """
+        The job of this routine is to initialize ports intermittently around the edge of the map. Drawing from the
+        original game, ports always come in pairs of two (i.e., two adjacent port vertices with same trading resource)
+        and no two "port pairs" are directly adjacent.
+        """
+        shore_vertices = [x for x, y in self.vertex_graph.nodes(data=True) if y['on_shore']]
+        visited = {x: False for x in shore_vertices}
+        num_ports = 3 * self.board_size
+        port_resources = [RESOURCE.GRAIN, RESOURCE.ORE, RESOURCE.WOOL, RESOURCE.LUMBER, RESOURCE.BRICK, None]*(math.ceil(num_ports/6))
+        shuffle(port_resources)
+        # begin initializing the first port
+        curr_resource = port_resources.pop()
+        curr = shore_vertices[0]
+        curr_neighbors = [x for x in self.vertex_graph.neighbors(curr) if self.vertex_graph.nodes[x]['on_shore']]
+        assert(len(curr_neighbors) == 2)
+        self.vertex_objects[curr] = Port(curr, curr_resource)
+        self.vertex_objects[curr_neighbors[0]] = Port(curr_neighbors[0], curr_resource)
+        visited[curr] = True
+        visited[curr_neighbors[0]] = True
+        self.vertex_objects[curr_neighbors[1]] = Vertex(curr_neighbors[1])
+        visited[curr_neighbors[1]] = True
+        curr = [x for x in self.vertex_graph.neighbors(curr_neighbors[1]) if self.vertex_graph.nodes[x]['on_shore'] and not visited[x]]
+        assert(len(curr) == 1)
+        curr = curr[0]
+        # at this point, there is one "port" pair
+        i = 0
+        while True:
+            visited[curr] = True
+            if i == 0:
+                curr_resource = port_resources.pop()
+                self.vertex_objects[curr] = Port(curr, curr_resource)
+                i += 1
+            elif i == 1:
+                self.vertex_objects[curr] = Port(curr, curr_resource)
+                i += 1
+            else:
+                self.vertex_objects[curr] = Vertex(curr)
+                i = 0
+            neighbors = [x for x in self.vertex_graph.neighbors(curr) if self.vertex_graph.nodes[x]['on_shore'] and not visited[x]]
+            assert(len(neighbors) <= 1)
+            if len(neighbors) == 0:
+                break
+            curr = neighbors[0]
 
     def get_tile(self, q: int, r: int) -> Tile:
         try:
