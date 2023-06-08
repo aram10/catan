@@ -1,7 +1,7 @@
 import itertools
 import math
 import random
-from collections import defaultdict, deque
+from collections import defaultdict, deque, Counter
 from random import shuffle, sample
 from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable
 import networkx as nx
@@ -139,6 +139,7 @@ class Board:
             tile.set_vertices({self.vertex_objects[v] for v in vertices})
         # Note that edges have their own coordinate system while vertices are defined by their incident tiles
         self.edges = [[Edge(i, j) for j in range(2 * num_tiles + 2)] for i in range(2 * num_tiles + 2)]
+        c = Counter([v.get_resource() for v in self.vertex_objects.values() if isinstance(v, Port)])
 
     def __link_tile_and_vertices(self, tile: Tile) -> Set[Vertex]:
         """
@@ -199,21 +200,23 @@ class Board:
         shore_vertices = [x for x, y in self.vertex_graph.nodes(data=True) if y['on_shore']]
         visited = {x: False for x in shore_vertices}
         num_ports = 3 * self.board_size
-        port_resources = [RESOURCE.GRAIN, RESOURCE.ORE, RESOURCE.WOOL, RESOURCE.LUMBER, RESOURCE.BRICK, None]*(math.ceil(num_ports/6))
+        port_resources = [RESOURCE.GRAIN, RESOURCE.ORE, RESOURCE.WOOL, RESOURCE.LUMBER, RESOURCE.BRICK,
+                          RESOURCE.ANY] * (math.ceil(num_ports / 6))
         shuffle(port_resources)
         # begin initializing the first port
         curr_resource = port_resources.pop()
         curr = shore_vertices[0]
         curr_neighbors = [x for x in self.vertex_graph.neighbors(curr) if self.vertex_graph.nodes[x]['on_shore']]
-        assert(len(curr_neighbors) == 2)
+        assert (len(curr_neighbors) == 2)
         self.vertex_objects[curr] = Port(curr, curr_resource)
         self.vertex_objects[curr_neighbors[0]] = Port(curr_neighbors[0], curr_resource)
         visited[curr] = True
         visited[curr_neighbors[0]] = True
         self.vertex_objects[curr_neighbors[1]] = Vertex(curr_neighbors[1])
         visited[curr_neighbors[1]] = True
-        curr = [x for x in self.vertex_graph.neighbors(curr_neighbors[1]) if self.vertex_graph.nodes[x]['on_shore'] and not visited[x]]
-        assert(len(curr) == 1)
+        curr = [x for x in self.vertex_graph.neighbors(curr_neighbors[1]) if
+                self.vertex_graph.nodes[x]['on_shore'] and not visited[x]]
+        assert (len(curr) == 1)
         curr = curr[0]
         # at this point, there is one "port" pair
         i = 0
@@ -229,8 +232,9 @@ class Board:
             else:
                 self.vertex_objects[curr] = Vertex(curr)
                 i = 0
-            neighbors = [x for x in self.vertex_graph.neighbors(curr) if self.vertex_graph.nodes[x]['on_shore'] and not visited[x]]
-            assert(len(neighbors) <= 1)
+            neighbors = [x for x in self.vertex_graph.neighbors(curr) if
+                         self.vertex_graph.nodes[x]['on_shore'] and not visited[x]]
+            assert (len(neighbors) <= 1)
             if len(neighbors) == 0:
                 break
             curr = neighbors[0]
@@ -303,6 +307,9 @@ class Board:
 
     def get_vertices_from_tile(self, t: Tile) -> Set[Vertex]:
         return set(self.vertex_objects[x] for x in self.tile_graph.adj[t])
+
+    def vertices_are_adjacent(self, v1: Vertex, v2: Vertex) -> bool:
+        return v1.get_vertex_id() in self.vertex_graph.neighbors(v2.get_vertex_id())
 
 
 if __name__ == '__main__':

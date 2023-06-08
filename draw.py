@@ -1,7 +1,7 @@
 import math
 import turtle
 import tkinter
-from collections import deque, Counter
+from collections import deque, Counter, defaultdict
 from math import sqrt
 from turtle import *
 
@@ -26,6 +26,7 @@ COLOR_ORE = "#888C8D"
 COLOR_WOOL = "#7FC33F"
 COLOR_DESERT = "#D7B278"
 COLOR_WATER = "#0066FF"
+COLOR_BRIDGE = "#9D7D3C"
 
 color_map = {
     0: COLOR_BRICK,
@@ -42,7 +43,7 @@ sprites = {}
 
 def hex_to_rect(coord):
     v, u = coord[0], coord[1]
-    w = coord[2] if len(coord) == 3 else -v-u
+    w = coord[2] if len(coord) == 3 else -v - u
     x = -u / 2 + v - w / 2
     y = (u - w) * ROOT3_OVER_2
     return x * SIDE, y * SIDE
@@ -61,11 +62,12 @@ def hexagon(turtle, radius, color, dice_num):
     clone.end_fill()
     clone.penup()
     clone.left(60)
-    clone.forward(SIDE * ROOT3_OVER_2)
+    clone.forward(R)
+    p = clone.pos()
     if dice_num != -1:
         clone.color('red' if dice_num in {6, 8} else 'black')
         clone.write(str(dice_num), align="center", font=("Arial", SIDE // 2, "normal"))
-    return clone
+    return clone, p
 
 
 def load_sprites():
@@ -84,6 +86,9 @@ def load_sprites():
     wool = Image.open("sprites/wool.png").resize((64, 64), Image.ANTIALIAS)
     sprites['wool'] = ImageTk.PhotoImage(wool)
 
+    any = Image.open("sprites/any.png").resize((64, 64), Image.ANTIALIAS)
+    sprites['any'] = ImageTk.PhotoImage(any)
+
 
 def draw(board) -> None:
     # Initialize the turtle
@@ -94,11 +99,16 @@ def draw(board) -> None:
     screen = turtle.Screen()
     screen.tracer(0, 0)
 
-    tiledata = [(tile.get_coords(), tile.get_resource()) for tile in board.get_tiles()]
-
     load_sprites()
 
     icon_stack = deque([])
+
+    # Keep track of positions of hexagon centers on canvas for later use
+    # This will tell us exactly where all the vertices are, too
+    tile_positions = {}
+
+    # Need to draw "bridges" between port icons and the actual port vertices
+    lines_to_draw = deque([])
 
     # Plot the points
     x_off, y_off = hex_to_rect((board.board_size, board.board_size, -2 * board.board_size))
@@ -111,13 +121,46 @@ def draw(board) -> None:
         pos = hex_to_rect(hexcoord)
         pos = (pos[0] - x_off, pos[1] - y_off)
         tortoise.goto(pos)
-        clone = hexagon(tortoise, SIDE, color, board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
-        port_vertices = [v for v in tile.get_vertices() if isinstance(v, Port)]
-        if r == RESOURCE.WATER and len(port_vertices) == 2:
-            c = Counter([v.get_resource() for v in port_vertices])
+        clone, p = hexagon(tortoise, SIDE, color, board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
+        tile_positions[tile.get_coords()] = p
+        if r == RESOURCE.WATER:
+            ports = [v for v in tile.get_vertices() if isinstance(v, Port)]
+            c = Counter([v.get_resource() for v in ports])
             pr = max(c, key=c.get)
-            if pr:
-                icon_stack.append((clone.pos(), sprites[pr.name.lower()]))
+            ports_of_resource_in_question = [v for v in ports if v.get_resource() == pr]
+            if r == RESOURCE.WATER and c[pr] >= 2:
+                # could be 3 ports of same resource, but port tile only "owns" two of them
+                if c[pr] == 2 and board.vertices_are_adjacent(ports_of_resource_in_question[0],
+                                                              ports_of_resource_in_question[1]):
+                    icon_stack.append((clone.pos(), sprites[pr.name.lower()]))
+                    lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
+                    lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
+                elif c[pr] == 3:
+                    if board.vertices_are_adjacent(ports_of_resource_in_question[0], ports_of_resource_in_question[1]):
+                        icon_stack.append((clone.pos(), sprites[pr.name.lower()]))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
+                    elif board.vertices_are_adjacent(ports_of_resource_in_question[1],
+                                                     ports_of_resource_in_question[2]):
+                        icon_stack.append((clone.pos(), sprites[pr.name.lower()]))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
+                    elif board.vertices_are_adjacent(ports_of_resource_in_question[0],
+                                                     ports_of_resource_in_question[2]):
+                        icon_stack.append((clone.pos(), sprites[pr.name.lower()]))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
+    clone = tortoise.clone()
+    clone.color(COLOR_BRIDGE)
+    clone.pensize(5)
+    while lines_to_draw:
+        p1, vert_id = lines_to_draw.popleft()
+        p2 = tuple(sum(x) / 3 for x in zip(*[tile_positions[x] for x in vert_id]))
+        clone.penup()
+        clone.goto(p1)
+        clone.pendown()
+        clone.goto(p2)
+    clone.penup()
     while icon_stack:
         pos, spr = icon_stack.pop()
         screen.getcanvas().create_image(pos, image=spr)

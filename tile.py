@@ -33,7 +33,7 @@ class Tile:
         self.r = r
         return self
 
-    def get_coords(self) -> Tuple[int]:
+    def get_coords(self) -> Tuple[int, int]:
         return self.q, self.r
 
     def get_q(self) -> int:

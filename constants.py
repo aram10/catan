@@ -9,6 +9,7 @@ class RESOURCE(IntEnum):
     WOOL = 4
     DESERT = 5
     WATER = 6
+    ANY = 7
 
 
 class DIRECTION(IntEnum):

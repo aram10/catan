@@ -18,6 +18,9 @@ class Vertex:
     def __hash__(self):
         return hash(self.vertex_id)
 
+    def get_vertex_id(self) -> Set[Tuple[int, int]]:
+        return self.vertex_id
+
     def get_player_id(self) -> int:
         return self.player_building_id
 

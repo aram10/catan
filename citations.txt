@@ -1,1 +1,3 @@
-Sprites: Callum Taylor, The Noun Project (https://thenounproject.com/callumctaylor/)
+Sprites 
+	Resources: Callum Taylor, The Noun Project (https://thenounproject.com/callumctaylor/)
+	Question Mark: Alena, The Noun Project (https://thenounproject.com/joyeyes/)
