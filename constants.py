@@ -32,6 +32,15 @@ class PLAYERCOLOR(IntEnum):
     BROWN = 5
 
 
+class DEVELOPMENT(IntEnum):
+    KNIGHT = 0
+    ROAD_BUILDING = 1
+    YEAR_OF_PLENTY = 2
+    MONOPOLY = 3
+    VICTORY_POINT = 4
+
+
+
 """
 If we extrapolate from the base game, the chits [2,3,4,5,6,8,9,10,11,12] follow the multinomial distribution:
 

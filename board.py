@@ -201,7 +201,7 @@ class Board:
         visited = {x: False for x in shore_vertices}
         num_ports = 3 * self.board_size
         port_resources = [RESOURCE.GRAIN, RESOURCE.ORE, RESOURCE.WOOL, RESOURCE.LUMBER, RESOURCE.BRICK,
-                          RESOURCE.ANY] * (math.ceil(num_ports / 6))
+                          RESOURCE.ANY] * (math.ceil(num_ports / 6) + 1)
         shuffle(port_resources)
         # begin initializing the first port
         curr_resource = port_resources.pop()
@@ -269,6 +269,14 @@ class Board:
     def get_edges_from_tile(self, tile: Tile) -> Set[Edge]:
         return {self.edges[x][y] for (x, y) in get_edge_coords_from_tile(tile)}
 
+    def get_edges_from_vertex(self, vertex: Vertex) -> List[Edge]:
+        v_id = vertex.get_vertex_id()
+        res = []
+        for x in self.vertex_graph.adj[v_id]:
+            i, j = self.vertex_graph.get_edge_data(v_id, x)['obj']
+            res.append(self.edges[i][j])
+        return res
+
     def get_tile_coords(self) -> Set[Tuple[int]]:
         return self.tile_coords
 
@@ -311,7 +319,11 @@ class Board:
     def vertices_are_adjacent(self, v1: Vertex, v2: Vertex) -> bool:
         return v1.get_vertex_id() in self.vertex_graph.neighbors(v2.get_vertex_id())
 
+    def get_edge_from_graph_edge(self, graph_edge: Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]) -> Edge:
+        i, j = self.vertex_graph.get_edge_data(graph_edge[0], graph_edge[1])['obj']
+        return self.edges[i][j]
+
 
 if __name__ == '__main__':
-    b = Board(3)
+    b = Board(5)
     draw.draw(b)

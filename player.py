@@ -1,7 +1,10 @@
+import random
 import uuid
+from typing import List, Optional
 
 from constants import RESOURCE, PLAYERCOLOR
 from edge import Edge
+from tile import Tile
 from vertex import Vertex
 
 
@@ -19,12 +22,43 @@ class Player:
         self.buildings = set()
         self.has_largest_army = False
         self.has_longest_road = False
+        self.first_settlement = None
+        self.second_settlement = None
+
+    def take_turn(self, game: 'Game'):
+        pass
+
+    def select_tile_for_robber(self, game: 'Game') -> Tile:
+        return game.board.fetch_random_tile()
+
+    def select_player_to_steal_from(self, game: 'Game', tile: Tile) -> 'Player':
+        return random.choice(game.get_players_on_tile(tile))
+
+    def select_road_building_spot(self, game: 'Game', available_spots: List[Edge]) -> Edge:
+        return random.choice(available_spots)
+
+    def select_year_of_plenty_resource(self, game: 'Game') -> RESOURCE:
+        return RESOURCE(random.choice(range(5)))
+
+    def select_monopoly_resource(self, game: 'Game') -> RESOURCE:
+        return RESOURCE(random.choice(range(5)))
 
     def get_player_id(self) -> int:
         return self.id
 
+    def get_resource_counts(self) -> List[int]:
+        return self.resources
+
     def get_resource_count(self, r: RESOURCE):
         return self.resources[r.value]
+
+    def get_random_available_resource(self) -> Optional[RESOURCE]:
+        """
+        Returns a random resource type that this player has for the purposes of stealing.
+        """
+        if sum(self.resources) == 0:
+            return None
+        return random.choice([RESOURCE(i) for i in range(5) if self.resources[i] > 0])
 
     def handle_roll(self, roll: int):
         """
@@ -32,15 +66,6 @@ class Player:
         :param roll: The dice roll.
         """
         raise NotImplementedError()
-
-    def can_build(self, vertex: Vertex) -> bool:
-        """
-        False if the player may not build on this vertex due to the distance rule, no connecting road, or another
-        building, and true otherwise.
-        :param vertex: Spot to be built on.
-        :return: Whether the player may build here.
-        """
-        edges = [get_edges_from_vertex(vertex)]
 
     def can_build_settlement(self) -> bool:
         """
@@ -59,7 +84,9 @@ class Player:
         return self.resources[RESOURCE.GRAIN] >= 2 and self.resources[RESOURCE.ORE] >= 3 and self.settlements >= 1
 
     def build_road(self, edge: Edge):
-        raise NotImplementedError()
+        edge.set_player_road_id(self.id)
+        self.resources[RESOURCE.BRICK] -= 1
+        self.resources[RESOURCE.LUMBER] -= 1
 
     def build_settlement(self, vertex: Vertex):
         vertex.set_player_id(self.id)
@@ -107,6 +134,9 @@ class Player:
             if self.resources[i] > 0:
                 resources.add(RESOURCE(i))
         return resources
+
+    def give_victory_points(self, amt: int):
+        self.victory_points += amt
 
     def __hash__(self):
         return hash(self.id)

@@ -1,12 +1,16 @@
+from collections import defaultdict
 from enum import Enum
 from random import shuffle, sample
 import random
 import warnings
-from typing import List
+from typing import List, Tuple, Set
+
+from networkx import Graph
 
 from board import Board
 from constants import RESOURCE, PLAYERCOLOR
 from draw import draw
+from edge import Edge
 from player import Player
 from tile import Tile
 from vertex import Vertex
@@ -23,7 +27,9 @@ class Game:
                 self.players.append(Player(PLAYERCOLOR(i)))
         else:
             self.board = Board(3)
-        self.robber_tile = random.choice(self.board.get_desert_tiles())
+        self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
+        self.player_buildings = defaultdict(list)
+        self.player_roads = defaultdict(list)
 
     def roll(self, player: Player):
         """
@@ -69,6 +75,7 @@ class Game:
             raise FailedBuildError(
                 "Player " + player_id + " may not build on a spot that Player " + vertex.get_player_id() + " has already built on.")
         player.build_settlement(vertex)
+        self.player_buildings.append(vertex)
 
     def build_city(self, player_id: int, vertex: Vertex):
         """
@@ -97,6 +104,74 @@ class Game:
             if (i := vertex.get_player_id()) != -1:
                 players.add(self.players[i])
         return players
+
+    def get_player_subgraph(self, player: Player) -> Graph:
+        """
+        Returns the smallest subgraph of the board's vertex subgraph that includes
+        all vertices and edges that this player has built on. The subgraph has at most 2 components.
+        """
+        return self.board.vertex_graph.subgraph(
+            [x.get_vertex_id() for x in self.player_buildings[player.get_player_id()]])
+
+    def get_available_road_spots(self, player_id: int) -> List[Edge]:
+        """
+        Given a player, return all edges that this player can build a road on.
+        """
+        res = []
+        for edge in self.board.vertex_graph.edges:
+            edge_obj = self.board.get_edge_from_graph_edge(edge)
+            if edge_obj.get_player_road_id() != -1:
+                continue
+            v1, v2 = self.board.vertex_objects[edge[0]], self.board.vertex_objects[edge[1]]
+            if v1.get_player_id() == player_id or v2.get_player_id() == player_id:
+                res.append(edge_obj)
+                continue
+            for e2 in self.board.get_edges_from_vertex(v1):
+                if e2.get_player_road_id() == player_id:
+                    res.append(edge_obj)
+                    continue
+            for e2 in self.board.get_edges_from_vertex(v2):
+                if e2.get_player_road_id() == player_id:
+                    res.append(edge_obj)
+                    continue
+        return res
+
+    def get_available_settlement_spots(self, player_id: int) -> List[Vertex]:
+        """
+        Given a player, return all vertices that this player can build a settlement on.
+        """
+        res = []
+        for vertex in self.board.vertex_graph.nodes:
+            vertex_obj = self.board.vertex_objects[vertex]
+            if vertex_obj.get_player_id() != -1:
+                continue
+            for neighbor in self.board.vertex_graph.neighbors(vertex):
+                neighbor_obj = self.board.vertex_objects[neighbor]
+                if neighbor_obj.get_player_id() not in [-1, player_id]:
+                    break
+            else:
+                for edge_obj in self.board.get_edges_from_vertex(vertex_obj):
+                    if edge_obj.get_player_road_id() == player_id:
+                        res.append(vertex_obj)
+                        break
+        return res
+
+    def check_longest_road(self):
+        """
+        We only need to re-check for longest road whenever someone builds a road. And, if building a road causes the
+        longest road to change, then it must include that road. So, the problem reduces to finding the longest path
+        from the road that was just built to any other road.  
+        """
+        ...
+
+    def get_player(self, player_id: int) -> Player:
+        return self.players[player_id]
+
+    def get_players(self) -> List[Player]:
+        return self.players
+
+    def set_robber_tile(self, tile: Tile):
+        self.robber_tile = tile
 
 
 if __name__ == "__main__":
