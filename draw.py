@@ -163,8 +163,6 @@ def draw(board) -> None:
                         lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
                         lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
 
-    clone = tortoise.clone()
-
     # calculate canvas positions of vertices/edges for future drawing
     for vertex in board.get_vertices():
         # average of tile center positions
@@ -177,8 +175,6 @@ def draw(board) -> None:
         vertex_pos_list = [v.get_canvas_pos() for v in board.get_vertices_from_edge(edge)]
         edge.set_canvas_pos(
             ((vertex_pos_list[0][0] + vertex_pos_list[1][0]) / 2, (vertex_pos_list[0][1] + vertex_pos_list[1][1]) / 2))
-        clone.goto(edge.get_canvas_pos())
-        clone.dot(10, "red")
 
     clone = tortoise.clone()
     clone.color(COLOR_BRIDGE)
