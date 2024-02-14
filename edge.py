@@ -9,6 +9,8 @@ class Edge:
         self.x = x
         self.y = y
         self.player_road_id = -1
+        # used for drawing the game
+        self.canvas_pos = None
 
     def __eq__(self, other):
         return isinstance(other, Edge) and self.x == other.x and self.y == other.y
@@ -24,3 +26,9 @@ class Edge:
 
     def set_player_road_id(self, i: int):
         self.player_road_id = i
+
+    def get_canvas_pos(self) -> Tuple[int, int]:
+        return self.canvas_pos
+
+    def set_canvas_pos(self, pos: Tuple[int,int]):
+        self.canvas_pos = pos

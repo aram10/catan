@@ -1,14 +1,16 @@
+import heapq
 import itertools
 import math
 import random
 from collections import defaultdict, deque, Counter
 from random import shuffle, sample
-from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable
+from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable, Optional
 import networkx as nx
 
 import numpy as np
 
 import constants
+from custom_types import GraphEdge, TileCoords, EdgeCoords, TileGrid, TileData, GraphVertex
 from port import Port
 
 if TYPE_CHECKING:
@@ -22,7 +24,7 @@ from vertex import Vertex
 import draw
 
 
-def generate_resources_and_chits(num_tiles: int) -> List[Tuple[RESOURCE, int]]:
+def generate_resources_and_chits(num_tiles: int) -> TileData:
     """
     Creates resource/chit pairs that will be assigned to board tiles.
 
@@ -41,7 +43,7 @@ def generate_resources_and_chits(num_tiles: int) -> List[Tuple[RESOURCE, int]]:
     return tile_data
 
 
-def generate_board(n: int) -> Tuple[List[List[Tile]], List[Tuple[int]]]:
+def generate_board(n: int) -> Tuple[TileGrid, TileCoords]:
     """
     Fill in board with generated tiles.
 
@@ -76,7 +78,7 @@ def generate_board(n: int) -> Tuple[List[List[Tile]], List[Tuple[int]]]:
     return tile_grid, tile_coords
 
 
-def get_edge_coords_from_tile(tile: Tile) -> Set[Tuple[int, int]]:
+def get_edge_coords_from_tile(tile: Tile) -> EdgeCoords:
     q, r = tile.get_coords()
     return {(2 * q, 2 * r - 1),
             (2 * q + 1, 2 * r - 1),
@@ -187,7 +189,7 @@ class Board:
                 self.vertex_graph.add_edge(v1, v2)
                 shared_edge_coords = get_shared_edge_coords(tile, n1)
                 assert (shared_edge_coords is not None)
-                attrs[(v1, v2)] = {'obj': shared_edge_coords}
+                attrs[(v1, v2)] = {'obj': shared_edge_coords, 'visited': -1}
         nx.set_edge_attributes(self.vertex_graph, attrs)
         return vertices
 
@@ -239,6 +241,71 @@ class Board:
                 break
             curr = neighbors[0]
 
+    def check_longest_road(self, starting_road: Edge, curr_longest: int) -> bool:
+        """
+        Generally, this problem is isomorphic to unweighted Longest Path Problem, which is NP-Hard. Fortunately, we can
+        cut some corners.
+
+        We only need to re-check for longest road whenever someone builds a road. And, if building a road causes the
+        longest road to change, then it must include that road. So, we only need to consider the roads that are directly
+        connected to the added road. Take the two vertices on either side of the given edge, and find all other vertices
+        that can be reached using only the roads of the given player (the one who built the road). Call this component
+        G*.
+
+        For every node in G*, perform a DFS to every other node, calculating the longest paths possible. We can do this
+        via backtracking or a LIFO queue. The new longest road, if one exists, is 1 road longer than the old longest
+        road. So, if we ever see such a path length, we can stop searching.
+
+        This method returns True if there is a new longest road, and False otherwise.
+        """
+        p_id = starting_road.get_player_road_id()
+        if p_id == -1:
+            raise ValueError("Cannot check for longest road starting on an Edge with no road built on it.")
+        graph_edge = self.get_graph_edge_from_edge(starting_road)
+        if not graph_edge:
+            raise ValueError("Invalid starting road.")
+        v1, v2 = graph_edge
+        edges = self._get_connected_edges(v1, p_id)
+        # consider vertices with only one outgoing road first - if such vertices exist (e.g. longest road is not a cycle) then the longest possible road always starts from one of these
+        vertices = set().union(*[vertex for edge in edges for vertex in edge])
+        boundary_vertices = set(v for v in vertices if len([(a, b) for a, b in self.vertex_graph.edges(v) if
+                                                            self.get_edge_from_graph_edge(
+                                                                (a, b)).get_player_road_id() == p_id]) == 1)
+        edges = sorted(edges, key=lambda e: e[0] not in boundary_vertices and e[1] not in boundary_vertices)
+        # we want to treat the edges (roads) as the vertices themselves
+        for i, edge in enumerate(edges):
+            pq = [(-1, edge)]
+            while pq:
+                dist, curr = heapq.heappop(pq)
+                node_1, node_2 = curr
+                self.vertex_graph[node_1][node_2]['visited'] = i
+                for node in [node_1, node_2]:
+                    for neighbor_node in self.vertex_graph.neighbors(node):
+                        e = self.get_edge_from_graph_edge((node, neighbor_node))
+                        if e.get_player_road_id() == p_id and self.vertex_graph[node][neighbor_node]['visited'] != i:
+                            if -dist + 1 > curr_longest:
+                                return True
+                            heapq.heappush(pq, (dist - 1, (node, neighbor_node)))
+        return False
+
+    def _get_connected_edges(self, start: GraphVertex, player_road_id: int) -> List[GraphEdge]:
+        """
+        Given an initial vertex (start) in the networkx vertex graph, and a player ID, returns all edges in the graph
+        that are reachable from start via roads built by the given player.
+        """
+        queue = deque([start])
+        res = [start]
+        visited = defaultdict(bool)
+        while queue:
+            curr = queue.popleft()
+            for neighbor in self.vertex_graph.neighbors(curr):
+                edge = self.get_edge_from_graph_edge((curr, neighbor))
+                if edge.get_player_road_id() == player_road_id and not visited[frozenset({curr, neighbor})]:
+                    visited[frozenset({start, neighbor})] = True
+                    queue.append(neighbor)
+                    res.append(frozenset({start, neighbor}))
+        return res
+
     def get_tile(self, q: int, r: int) -> Tile:
         try:
             return self.tiles[r][q - max(0, self.board_size - (2 * self.board_size + 1 - abs(self.board_size - r)))]
@@ -247,6 +314,12 @@ class Board:
 
     def get_tiles(self) -> Iterable[Tile]:
         return iter(tile for row in self.tiles for tile in row if tile is not None)
+
+    def get_edges(self) -> Iterable[Edge]:
+        return iter(self.get_edge_from_graph_edge(edge) for edge in self.vertex_graph.edges)
+
+    def get_vertices(self) -> Iterable[Vertex]:
+        return iter(self.vertex_objects[x] for x in self.vertex_objects.keys())
 
     def get_neighboring_tiles(self, tile: Tile) -> Set[Tile]:
         res = set()
@@ -277,7 +350,7 @@ class Board:
             res.append(self.edges[i][j])
         return res
 
-    def get_tile_coords(self) -> Set[Tuple[int]]:
+    def get_tile_coords(self) -> TileCoords:
         return self.tile_coords
 
     def get_tiles_with_chit(self, chit: int) -> List[Tile]:
@@ -319,11 +392,17 @@ class Board:
     def vertices_are_adjacent(self, v1: Vertex, v2: Vertex) -> bool:
         return v1.get_vertex_id() in self.vertex_graph.neighbors(v2.get_vertex_id())
 
-    def get_edge_from_graph_edge(self, graph_edge: Tuple[Set[Tuple[int, int]], Set[Tuple[int, int]]]) -> Edge:
+    def get_edge_from_graph_edge(self, graph_edge: GraphEdge) -> Edge:
         i, j = self.vertex_graph.get_edge_data(graph_edge[0], graph_edge[1])['obj']
         return self.edges[i][j]
 
+    def get_graph_edge_from_edge(self, edge: Edge) -> Optional[GraphEdge]:
+        i, j = edge.get_coords()
+        graph_edge = [(u, v) for u, v, e in self.vertex_graph.edges(data=True) if e['obj'] == (i, j)]
+        if len(graph_edge) == 0:
+            return None
+        return graph_edge[0]
 
-if __name__ == '__main__':
-    b = Board(5)
-    draw.draw(b)
+    def get_vertices_from_edge(self, edge: Edge) -> Tuple[Vertex, Vertex]:
+        v1, v2 = self.get_graph_edge_from_edge(edge)
+        return self.vertex_objects[v1], self.vertex_objects[v2]

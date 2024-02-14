@@ -21,6 +21,8 @@ class Tile:
         self.vertices = None
         self.robber = False
         self.is_water_tile = False
+        # used for drawing the game
+        self.canvas_pos = None
 
     def __hash__(self):
         return hash((self.q, self.r, self.resource))
@@ -71,3 +73,9 @@ class Tile:
 
     def has_robber(self) -> bool:
         return self.robber
+
+    def get_canvas_pos(self) -> Tuple[int, int]:
+        return self.canvas_pos
+
+    def set_canvas_pos(self, pos: Tuple[int, int]):
+        self.canvas_pos = pos

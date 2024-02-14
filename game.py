@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 from enum import Enum
 from random import shuffle, sample
 import random
@@ -9,6 +9,7 @@ from networkx import Graph
 
 from board import Board
 from constants import RESOURCE, PLAYERCOLOR
+from custom_types import GraphVertex, GraphEdge
 from draw import draw
 from edge import Edge
 from player import Player
@@ -28,8 +29,8 @@ class Game:
         else:
             self.board = Board(3)
         self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
-        self.player_buildings = defaultdict(list)
-        self.player_roads = defaultdict(list)
+        self.player_buildings = defaultdict(set)
+        self.player_roads = defaultdict(set)
 
     def roll(self, player: Player):
         """
@@ -62,20 +63,45 @@ class Game:
 
         # TODO: Need to allow player to actually take turn
 
-    def build_settlement(self, player_id: int, vertex: Vertex):
+    def build_settlement(self, player_id: int, vertex: Vertex, is_game_start: bool = False):
         """
-        Attempts to build a settlement for a certain player.
+        Builds a settlement for a player.
         :param player_id: ID of player building settlement
         :param vertex: Vertex upon which to build settlement
+        :param is_game_start: True if player is placing free settlement(s) at game start
         """
-        player = self.players[player_id]
-        if not player.can_build_settlement():
-            raise FailedBuildError("Player " + player_id + " cannot build a settlement.")
         if vertex.get_player_id() != -1:
             raise FailedBuildError(
-                "Player " + player_id + " may not build on a spot that Player " + vertex.get_player_id() + " has already built on.")
-        player.build_settlement(vertex)
-        self.player_buildings.append(vertex)
+                f"Player {str(player_id)} may not build on a spot that Player {str(vertex.get_player_id())} has already built on.")
+        player = self.players[player_id]
+        if is_game_start:
+            player.place_settlement(vertex)
+            self.player_buildings[player_id].add(vertex)
+        elif not player.can_build_settlement():
+            raise FailedBuildError(f"Player {str(player_id)} cannot build a settlement.")
+        else:
+            player.build_settlement(vertex)
+            self.player_buildings[player_id].add(vertex)
+
+    def build_road(self, player_id: int, edge: Edge, is_game_start: bool = False):
+        """
+        Builds a road for a player.
+        :param player_id: ID of player building road
+        :param edge: Edge upon which to build road
+        :param is_game_start: True if player is placing free road(s) at game start
+        """
+        if edge.get_player_road_id() != -1:
+            raise FailedBuildError(
+                f"Player {str(player_id)} may not build on a spot that Player {str(edge.get_player_road_id())} has already built on.")
+        player = self.players[player_id]
+        if is_game_start:
+            player.place_road(edge)
+            self.player_roads[player_id].add(edge)
+        elif not player.can_build_road():
+            raise FailedBuildError(f"Player {str(player_id)} cannot build a road.")
+        else:
+            player.build_road(edge)
+            self.player_roads[player_id].add(edge)
 
     def build_city(self, player_id: int, vertex: Vertex):
         """
@@ -155,14 +181,6 @@ class Game:
                         res.append(vertex_obj)
                         break
         return res
-
-    def check_longest_road(self):
-        """
-        We only need to re-check for longest road whenever someone builds a road. And, if building a road causes the
-        longest road to change, then it must include that road. So, the problem reduces to finding the longest path
-        from the road that was just built to any other road.  
-        """
-        ...
 
     def get_player(self, player_id: int) -> Player:
         return self.players[player_id]

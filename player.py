@@ -10,14 +10,17 @@ from vertex import Vertex
 
 class Player:
 
-    def __init__(self, player_id: int, color: PLAYERCOLOR, available_settlements: int = 5):
+    def __init__(self, player_id: int, color: PLAYERCOLOR, available_settlements: int = 5, available_roads: int = 15, available_cities: int = 4):
         self.id = player_id
         self.color = color
         self.available_settlements = available_settlements
+        self.available_roads = available_roads
+        self.available_cities = available_cities
         # resources (BRICK, GRAIN, LUMBER, ORE, WOOD)
         self.resources = [0, 0, 0, 0, 0]
         self.victory_points = 0
         self.settlements = 0
+        self.roads = 0
         self.cities = 0
         self.buildings = set()
         self.has_largest_army = False
@@ -81,12 +84,21 @@ class Player:
         """
         True if this play is able to build a city and false otherwise.
         """
-        return self.resources[RESOURCE.GRAIN] >= 2 and self.resources[RESOURCE.ORE] >= 3 and self.settlements >= 1
+        return self.resources[RESOURCE.GRAIN] >= 2 and self.resources[RESOURCE.ORE] >= 3 and self.settlements >= 1 and self.cities < self.available_cities
+
+    def can_build_road(self) -> bool:
+        return self.resources[RESOURCE.BRICK] >= 1 and self.resources[RESOURCE.LUMBER] >= 1 and self.roads < self.available_roads
 
     def build_road(self, edge: Edge):
         edge.set_player_road_id(self.id)
+        self.roads += 1
         self.resources[RESOURCE.BRICK] -= 1
         self.resources[RESOURCE.LUMBER] -= 1
+
+    def place_road(self, edge: Edge):
+        # used for initial road building at start of game
+        edge.set_player_road_id(self.id)
+        self.roads += 1
 
     def build_settlement(self, vertex: Vertex):
         vertex.set_player_id(self.id)
@@ -96,6 +108,11 @@ class Player:
         self.resources[RESOURCE.LUMBER] -= 1
         self.resources[RESOURCE.GRAIN] -= 1
         self.resources[RESOURCE.WOOL] -= 1
+
+    def place_settlement(self, vertex: Vertex):
+        vertex.set_player_id(self.id)
+        self.settlements += 1
+        self.victory_points += 1
 
     def build_city(self, vertex: Vertex):
         vertex.upgrade_to_city()
