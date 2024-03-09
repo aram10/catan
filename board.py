@@ -21,8 +21,6 @@ from edge import Edge
 from tile import Tile
 from vertex import Vertex
 
-import draw
-
 
 def generate_resources_and_chits(num_tiles: int) -> TileData:
     """

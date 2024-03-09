@@ -1,17 +1,13 @@
-from collections import defaultdict, deque
-from enum import Enum
-from random import shuffle, sample
+from collections import defaultdict
 import random
-import warnings
-from typing import List, Tuple, Set
+from typing import List
 
 from networkx import Graph
 
 from board import Board
-from constants import RESOURCE, PLAYERCOLOR
-from custom_types import GraphVertex, GraphEdge
-from draw import draw
+from constants import PLAYERCOLOR
 from edge import Edge
+from game_window import GameWindow
 from player import Player
 from tile import Tile
 from vertex import Vertex
@@ -25,7 +21,7 @@ class Game:
         if six_players:
             self.board = Board(4)
             for i in range(4, 6):
-                self.players.append(Player(PLAYERCOLOR(i)))
+                self.players.append(Player(i, PLAYERCOLOR(i)))
         else:
             self.board = Board(3)
         self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
@@ -194,4 +190,5 @@ class Game:
 
 if __name__ == "__main__":
     game = Game()
-    draw(game.board)
+    gw = GameWindow()
+    gw.draw(game.board)

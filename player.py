@@ -1,16 +1,19 @@
 import random
 import uuid
 from typing import List, Optional
+from abc import ABC, abstractmethod
 
 from constants import RESOURCE, PLAYERCOLOR
 from edge import Edge
+from game_window import GameWindow
 from tile import Tile
 from vertex import Vertex
 
 
 class Player:
 
-    def __init__(self, player_id: int, color: PLAYERCOLOR, available_settlements: int = 5, available_roads: int = 15, available_cities: int = 4):
+    def __init__(self, player_id: int, color: PLAYERCOLOR, available_settlements: int = 5, available_roads: int = 15,
+                 available_cities: int = 4):
         self.id = player_id
         self.color = color
         self.available_settlements = available_settlements
@@ -29,6 +32,13 @@ class Player:
         self.second_settlement = None
 
     def take_turn(self, game: 'Game'):
+        pass
+
+    def handle_roll(self, roll: int):
+        """
+        Invoked whenever the dice are rolled. Handles resource production for this player.
+        :param roll: The dice roll.
+        """
         pass
 
     def select_tile_for_robber(self, game: 'Game') -> Tile:
@@ -63,13 +73,6 @@ class Player:
             return None
         return random.choice([RESOURCE(i) for i in range(5) if self.resources[i] > 0])
 
-    def handle_roll(self, roll: int):
-        """
-        Invoked whenever the dice are rolled. Handles resource production for this player.
-        :param roll: The dice roll.
-        """
-        raise NotImplementedError()
-
     def can_build_settlement(self) -> bool:
         """
         True if this player is able to build a settlement and false otherwise.
@@ -84,10 +87,12 @@ class Player:
         """
         True if this play is able to build a city and false otherwise.
         """
-        return self.resources[RESOURCE.GRAIN] >= 2 and self.resources[RESOURCE.ORE] >= 3 and self.settlements >= 1 and self.cities < self.available_cities
+        return self.resources[RESOURCE.GRAIN] >= 2 and self.resources[
+            RESOURCE.ORE] >= 3 and self.settlements >= 1 and self.cities < self.available_cities
 
     def can_build_road(self) -> bool:
-        return self.resources[RESOURCE.BRICK] >= 1 and self.resources[RESOURCE.LUMBER] >= 1 and self.roads < self.available_roads
+        return self.resources[RESOURCE.BRICK] >= 1 and self.resources[
+            RESOURCE.LUMBER] >= 1 and self.roads < self.available_roads
 
     def build_road(self, edge: Edge):
         edge.set_player_road_id(self.id)
@@ -160,3 +165,18 @@ class Player:
 
     def __eq__(self, other):
         return isinstance(other, Player) and self.id == other.get_player_id()
+
+
+class VisualPlayer(Player):
+    """
+    Player class that interacts with tkinter Canvas to render building a settlement/city/road and moving the robber
+    """
+
+    def __init__(self, player_id: int, color: PLAYERCOLOR, gw: GameWindow, available_settlements: int = 5,
+                 available_roads: int = 15, available_cities: int = 4):
+        super().__init__(self, player_id, color, available_settlements, available_roads, available_cities)
+        self.gw = gw
+
+    def build_city(self, vertex: Vertex):
+        Player.build_city(self, vertex)
+        self.gw.draw_settlement(vertex, self.color)
