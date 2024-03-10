@@ -24,6 +24,8 @@ class Game:
                 self.players.append(Player(i, PLAYERCOLOR(i)))
         else:
             self.board = Board(3)
+        # the user of the GUI is always player 0, and will always roll first
+        self.current_turn = 0
         self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
         self.player_buildings = defaultdict(set)
         self.player_roads = defaultdict(set)
@@ -190,5 +192,5 @@ class Game:
 
 if __name__ == "__main__":
     game = Game()
-    gw = GameWindow()
-    gw.draw(game.board)
+    gw = GameWindow(game)
+    gw.draw()

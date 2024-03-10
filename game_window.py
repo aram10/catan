@@ -4,6 +4,7 @@ from collections import deque, Counter
 from math import sqrt
 from tkinter import LEFT, RIGHT, TOP, Y, ttk
 from turtle import RawTurtle
+from typing import Tuple
 
 from PIL import Image, ImageTk
 
@@ -71,7 +72,10 @@ def hexagon(turtle, radius, color, dice_num):
 
 class GameWindow:
 
-    def __init__(self):
+    def __init__(self, game: 'Game'):
+        self.game = game
+        self.board = game.board
+
         self.root = tkinter.Tk()
         self.root.geometry("1500x1000")
 
@@ -103,7 +107,8 @@ class GameWindow:
         roll_button = tkinter.Button(self.button_frame, text="Roll")
         roll_button.pack(side="top", padx=5, pady=5)
 
-        settlement_button = tkinter.Button(self.button_frame, text="Build Settlement")
+        settlement_button = tkinter.Button(self.button_frame, text="Build Settlement",
+                                           command=self.show_available_settlement_spots)
         settlement_button.pack(side="top", padx=5, pady=5)
 
         city_button = tkinter.Button(self.button_frame, text="Build City")
@@ -132,10 +137,20 @@ class GameWindow:
         self.update_stack = deque([])
 
         self.sprites = {}
-        self.canvas_objects = {}
+
+        # keep track of object ids for settlement/road icons
+        self.canvas_settlements = {}
+        self.canvas_roads = {}
+
+        # object ids of placeholder sprites, indicating a spot is open for a settlement/road
+        self.canvas_phantom_settlements = {}
+        self.canvas_phantom_roads = {}
+
+        self.phantom_settlements_anim = True
+
         self._load_sprites()
 
-    def draw(self, board) -> None:
+    def draw(self) -> None:
         tortoise = RawTurtle(self.canvas)
         tortoise.speed('fastest')
         tortoise.hideturtle()
@@ -151,17 +166,17 @@ class GameWindow:
         lines_to_draw = deque([])
 
         # Plot the points
-        x_off, y_off = hex_to_rect((board.board_size, board.board_size, -2 * board.board_size))
+        x_off, y_off = hex_to_rect((self.board.board_size, self.board.board_size, -2 * self.board.board_size))
         y_off += ROOT3_OVER_2 * SIDE
         x_off -= SIDE / 2
-        for tile in board.get_tiles():
+        for tile in self.board.get_tiles():
             hexcoord = tile.get_coords()
             r = tile.get_resource()
             color = color_map[r.value]
             pos = hex_to_rect(hexcoord)
             pos = (pos[0] - x_off, pos[1] - y_off)
             tortoise.goto(pos)
-            clone, p = hexagon(tortoise, SIDE, color, board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
+            clone, p = hexagon(tortoise, SIDE, color, self.board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
             tile_positions[tile.get_coords()] = p
             tile.set_canvas_pos(p)
             if r == RESOURCE.WATER:
@@ -171,42 +186,43 @@ class GameWindow:
                 ports_of_resource_in_question = [v for v in ports if v.get_resource() == pr]
                 if r == RESOURCE.WATER and c[pr] >= 2:
                     # could be 3 ports of same resource, but port tile only "owns" two of them
-                    if c[pr] == 2 and board.vertices_are_adjacent(ports_of_resource_in_question[0],
-                                                                  ports_of_resource_in_question[1]):
+                    if c[pr] == 2 and self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
+                                                                       ports_of_resource_in_question[1]):
                         icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
                         lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
                         lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
                     elif c[pr] == 3:
-                        if board.vertices_are_adjacent(ports_of_resource_in_question[0],
-                                                       ports_of_resource_in_question[1]):
+                        if self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
+                                                            ports_of_resource_in_question[1]):
                             icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
                             lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
                             lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
-                        elif board.vertices_are_adjacent(ports_of_resource_in_question[1],
-                                                         ports_of_resource_in_question[2]):
+                        elif self.board.vertices_are_adjacent(ports_of_resource_in_question[1],
+                                                              ports_of_resource_in_question[2]):
                             icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
                             lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
                             lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
-                        elif board.vertices_are_adjacent(ports_of_resource_in_question[0],
-                                                         ports_of_resource_in_question[2]):
+                        elif self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
+                                                              ports_of_resource_in_question[2]):
                             icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
                             lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
                             lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
 
         # calculate canvas positions of vertices/edges for future drawing
-        for vertex in board.get_vertices():
+        for vertex in self.board.get_vertices():
             # average of tile center positions
-            tile_pos_list = [tile.get_canvas_pos() for tile in board.get_tiles_from_vertex(vertex)]
+            tile_pos_list = [tile.get_canvas_pos() for tile in self.board.get_tiles_from_vertex(vertex)]
             vertex.set_canvas_pos(((tile_pos_list[0][0] + tile_pos_list[1][0] + tile_pos_list[2][0]) / 3,
                                    (tile_pos_list[0][1] + tile_pos_list[1][1] + tile_pos_list[2][1]) / 3))
-            self.canvas_objects[vertex.get_canvas_pos()] = self.canvas.create_image(vertex.get_canvas_pos(),
-                                                                                    image=self.sprites[
-                                                                                        'settlement_placeholder'],
-                                                                                    state="hidden")
+            vertex_canvas_pos = vertex.get_canvas_pos()
+            self.canvas_phantom_settlements[vertex_canvas_pos] = self.canvas.create_image(vertex_canvas_pos,
+                                                                                                image=self.sprites[
+                                                                                                    'settlement_placeholder'],
+                                                                                                state="hidden")
 
-        for edge in board.get_edges():
+        for edge in self.board.get_edges():
             # average of vertex positions
-            vertex_pos_list = [v.get_canvas_pos() for v in board.get_vertices_from_edge(edge)]
+            vertex_pos_list = [v.get_canvas_pos() for v in self.board.get_vertices_from_edge(edge)]
             edge.set_canvas_pos(
                 ((vertex_pos_list[0][0] + vertex_pos_list[1][0]) / 2,
                  (vertex_pos_list[0][1] + vertex_pos_list[1][1]) / 2))
@@ -225,13 +241,13 @@ class GameWindow:
         while icon_stack:
             pos, spr = icon_stack.pop()
             img_item = self.canvas.create_image(pos, image=spr)
-            self.canvas.tag_bind(img_item, f'<Button-1>',
+            self.canvas.tag_bind(img_item, '<Button-1>',
                                  lambda event, pos=pos: print(f"Image clicked at position: x={pos[0]}, y={pos[1]}"))
 
         def check_for_updates():
             while self.update_stack:
                 pos, spr = self.update_stack.pop()
-                self.canvas.create_image(pos, spr)
+                self.canvas.create_image(pos, image=spr)
             self.root.update_idletasks()
             self.root.after(100, check_for_updates)
 
@@ -273,5 +289,34 @@ class GameWindow:
         settlement = settlement.resize((20, 20), Image.LANCZOS)
         self.sprites['settlement_placeholder'] = ImageTk.PhotoImage(settlement)
 
-    def draw_settlement(self, vertex: Vertex, color: PLAYERCOLOR):
-        self.update_stack.append(vertex.get_canvas_pos(), self.sprites[f'settlement_{color.name.lower()}'])
+    def draw_settlement(self, pos: Tuple[float, float]):
+        """
+        Draw a settlement at this position, whose color corresponds to the player whose turn it is
+        """
+        color_name = self.game.players[self.game.current_turn].color.name.lower()
+        self.update_stack.append((pos, self.sprites[f'settlement_{color_name}']))
+
+    def draw_and_clear(self, pos: Tuple[float, float]):
+        """
+        Draw a settlement at this position, whose color corresponds to the player whose turn it is.
+        Then, stop any ongoing settlement animations.
+        """
+        self.draw_settlement(pos)
+        self.phantom_settlements_anim = False
+        for pos in self.canvas_phantom_settlements:
+            self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='hidden')
+            self.canvas.tag_unbind(self.canvas_phantom_settlements[pos], "<Button-1>")
+
+    def show_available_settlement_spots(self):
+        # icons should place a settlement when clicked
+        for pos in self.canvas_phantom_settlements:
+            i = self.canvas.tag_bind(self.canvas_phantom_settlements[pos], "<Button-1>", lambda x, pos=pos: self.draw_and_clear(pos))
+        self.toggle_available_settlement_spots(True)
+
+    def toggle_available_settlement_spots(self, on: bool):
+        if self.phantom_settlements_anim:
+            for pos in self.canvas_phantom_settlements:
+                self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal' if on else 'hidden')
+            self.canvas.after(500, lambda: self.toggle_available_settlement_spots(not on))
+        else:
+            self.phantom_settlements_anim = True
