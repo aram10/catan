@@ -40,6 +40,11 @@ class DEVELOPMENT(IntEnum):
     VICTORY_POINT = 4
 
 
+class GAMEPHASE(IntEnum):
+    SETUP = 0
+    NORMAL = 1
+
+
 """
 If we extrapolate from the base game, the chits [2,3,4,5,6,8,9,10,11,12] follow the multinomial distribution:
 

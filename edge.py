@@ -11,6 +11,7 @@ class Edge:
         self.player_road_id = -1
         # used for drawing the game
         self.canvas_pos = None
+        self.rotation_angle = None
 
     def __eq__(self, other):
         return isinstance(other, Edge) and self.x == other.x and self.y == other.y
@@ -30,5 +31,8 @@ class Edge:
     def get_canvas_pos(self) -> Tuple[int, int]:
         return self.canvas_pos
 
-    def set_canvas_pos(self, pos: Tuple[int,int]):
+    def set_canvas_pos(self, pos: Tuple[int, int]):
         self.canvas_pos = pos
+
+    def set_rotation_angle(self, angle):
+        self.rotation_angle = angle

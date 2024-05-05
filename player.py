@@ -31,6 +31,9 @@ class Player:
         self.first_settlement = None
         self.second_settlement = None
 
+    def take_setup_turn(self, game: 'Game', give_resources=False):
+        pass
+
     def take_turn(self, game: 'Game'):
         pass
 

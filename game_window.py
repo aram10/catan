@@ -2,9 +2,10 @@ import math
 import tkinter
 from collections import deque, Counter
 from math import sqrt
-from tkinter import LEFT, RIGHT, TOP, Y, ttk
+from tkinter import LEFT, RIGHT, TOP, Y, ttk, DISABLED, NORMAL
 from turtle import RawTurtle
-from typing import Tuple
+from typing import Tuple, List
+from statistics import mean
 
 from PIL import Image, ImageTk
 
@@ -70,6 +71,21 @@ def hexagon(turtle, radius, color, dice_num):
     return clone, p
 
 
+def rotate(points, angle, center):
+    angle = math.radians(angle)
+    cos_val = math.cos(angle)
+    sin_val = math.sin(angle)
+    cx, cy = center
+    new_points = []
+    for x_old, y_old in points:
+        x_old -= cx
+        y_old -= cy
+        x_new = x_old * cos_val - y_old * sin_val
+        y_new = x_old * sin_val + y_old * cos_val
+        new_points.append([x_new + cx, y_new + cy])
+    return new_points
+
+
 class GameWindow:
 
     def __init__(self, game: 'Game'):
@@ -87,51 +103,88 @@ class GameWindow:
         self.menu_frame = tkinter.Frame(self.root, width=1500, height=800)
         self.menu_frame.pack(side="left", fill="y")
 
-        # Create CLI
-        self.cli = tkinter.Text(self.menu_frame, state="disabled", bg="black", fg="white")
-        self.cli.pack(side="top", fill="both", expand=True)
+        # Create display
+        self.display = tkinter.Text(self.menu_frame, state="disabled", bg="black", fg="white")
+        self.display.pack(side="top", fill="both", expand=True)
 
         # Create scrollbar
-        self.scroll = tkinter.Scrollbar(self.menu_frame, command=self.cli.yview)
+        self.scroll = tkinter.Scrollbar(self.menu_frame, command=self.display.yview)
 
-        # Configure CLI to use scrollbar
-        self.cli.configure(yscrollcommand=self.scroll.set)
+        # Configure display to use scrollbar
+        self.display.configure(yscrollcommand=self.scroll.set, foreground='white')
 
-        self.button_frame = tkinter.Frame(self.menu_frame)
+        self.info_frame = tkinter.Frame(self.menu_frame)
+        self.info_frame.pack(side="top")
+
+        self.resources_frame = tkinter.Frame(self.info_frame)
+        self.resources_frame.pack(side="top")
+
+        self.other_data_frame = tkinter.Frame(self.info_frame)
+        self.other_data_frame.pack(side="bottom")
+
+        self.options_frame = tkinter.Frame(self.menu_frame)
+        self.options_frame.pack(side="bottom")
+
+        self.button_frame = tkinter.Frame(self.options_frame)
         self.button_frame.pack(side="top")
 
-        self.offer_trade_frame = tkinter.Frame(self.menu_frame)
+        self.button_row_1 = tkinter.Frame(self.button_frame)
+        self.button_row_1.pack(side="top")
+
+        self.button_row_2 = tkinter.Frame(self.button_frame)
+        self.button_row_2.pack(side="bottom")
+
+        self.offer_trade_frame = tkinter.Frame(self.options_frame)
         self.offer_trade_frame.pack(side="bottom")
 
+        self.resource_label = tkinter.Label(self.resources_frame, text="brick: 0  grain: 0  lumber: 0  ore: 0  wool: 0")
+        self.resource_label.pack()
+
+        self.other_data_label = tkinter.Label(self.other_data_frame, text="victory points: 0")
+        self.other_data_label.pack(side="top")
+
         # Top region buttons
-        roll_button = tkinter.Button(self.button_frame, text="Roll")
-        roll_button.pack(side="top", padx=5, pady=5)
+        self.roll_button = tkinter.Button(self.button_row_1, text="Roll", state=DISABLED)
+        self.roll_button.pack(side="left", padx=5, pady=5)
 
-        settlement_button = tkinter.Button(self.button_frame, text="Build Settlement",
-                                           command=self.show_available_settlement_spots)
-        settlement_button.pack(side="top", padx=5, pady=5)
+        self.settlement_button = tkinter.Button(self.button_row_1, text="Build Settlement",
+                                                command=self.show_available_setup_settlement_spots, state=DISABLED)
+        self.settlement_button.pack(side="left", padx=5, pady=5)
 
-        city_button = tkinter.Button(self.button_frame, text="Build City")
-        city_button.pack(side="top", padx=5, pady=5)
+        self.city_button = tkinter.Button(self.button_row_1, text="Build City", state=DISABLED)
+        self.city_button.pack(side="left", padx=5, pady=5)
 
-        dev_card_button = tkinter.Button(self.button_frame, text="Buy Development Card")
-        dev_card_button.pack(side="top", padx=5, pady=5)
+        self.dev_card_button = tkinter.Button(self.button_row_1, text="Buy Development Card", state=DISABLED)
+        self.dev_card_button.pack(side="left", padx=5, pady=5)
+
+        self.knight_button = tkinter.Button(self.button_row_2, text="Play Knight (0)", state=DISABLED)
+        self.knight_button.pack(side="left", padx=5, pady=5)
+
+        self.road_building_button = tkinter.Button(self.button_row_2, text="Play Road Building (0)", state=DISABLED)
+        self.road_building_button.pack(side="left", padx=5, pady=5)
+
+        self.year_of_plenty_button = tkinter.Button(self.button_row_2, text="Play Year of Plenty (0)", state=DISABLED)
+        self.year_of_plenty_button.pack(side="left", padx=5, pady=5)
+
+        self.monopoly_button = tkinter.Button(self.button_row_2, text="Play Monopoly (0)", state=DISABLED)
+        self.monopoly_button.pack(side="left", padx=5, pady=5)
 
         # Offer Trade button
-        offer_trade_button = tkinter.Button(self.offer_trade_frame, text="Offer Trade")
-        offer_trade_button.pack(side="left", padx=5, pady=5)
+        self.offer_trade_button = tkinter.Button(self.offer_trade_frame, text="Offer Trade", state=DISABLED)
+        self.offer_trade_button.pack(side="left", padx=5, pady=5)
 
         # Trade Inputs (Fillable Text Inputs and Dropdowns)
-        from_input = tkinter.Entry(self.offer_trade_frame, width=10)
-        from_input.pack(side="left", padx=5, pady=5)
-        from_dropdown = ttk.Combobox(self.offer_trade_frame, width=10,
-                                     values=["Resource 1", "Resource 2", "Resource 3"])
-        from_dropdown.pack(side="left", padx=5, pady=5)
+        self.from_input = tkinter.Entry(self.offer_trade_frame, width=10)
+        self.from_input.pack(side="left", padx=5, pady=5)
+        self.from_dropdown = ttk.Combobox(self.offer_trade_frame, width=10,
+                                          values=["Resource 1", "Resource 2", "Resource 3"])
+        self.from_dropdown.pack(side="left", padx=5, pady=5)
 
-        to_input = tkinter.Entry(self.offer_trade_frame, width=10)
-        to_input.pack(side="left", padx=5, pady=5)
-        to_dropdown = ttk.Combobox(self.offer_trade_frame, width=10, values=["Resource 1", "Resource 2", "Resource 3"])
-        to_dropdown.pack(side="left", padx=5, pady=5)
+        self.to_input = tkinter.Entry(self.offer_trade_frame, width=10)
+        self.to_input.pack(side="left", padx=5, pady=5)
+        self.to_dropdown = ttk.Combobox(self.offer_trade_frame, width=10,
+                                        values=["Resource 1", "Resource 2", "Resource 3"])
+        self.to_dropdown.pack(side="left", padx=5, pady=5)
 
         # tk will check this every few frames to see if anything needs to be drawn
         self.update_stack = deque([])
@@ -142,15 +195,22 @@ class GameWindow:
         self.canvas_settlements = {}
         self.canvas_roads = {}
 
+        self.vertex_at_canvas_position = {}
+        self.edge_at_canvas_position = {}
+
         # object ids of placeholder sprites, indicating a spot is open for a settlement/road
         self.canvas_phantom_settlements = {}
         self.canvas_phantom_roads = {}
 
+        # flag for the flashing animation of available settlement/road spots
         self.phantom_settlements_anim = True
+        self.phantom_roads_anim = True
 
         self._load_sprites()
 
     def draw(self) -> None:
+        self.display_text("drawing board...")
+
         tortoise = RawTurtle(self.canvas)
         tortoise.speed('fastest')
         tortoise.hideturtle()
@@ -215,10 +275,10 @@ class GameWindow:
             vertex.set_canvas_pos(((tile_pos_list[0][0] + tile_pos_list[1][0] + tile_pos_list[2][0]) / 3,
                                    (tile_pos_list[0][1] + tile_pos_list[1][1] + tile_pos_list[2][1]) / 3))
             vertex_canvas_pos = vertex.get_canvas_pos()
-            self.canvas_phantom_settlements[vertex_canvas_pos] = self.canvas.create_image(vertex_canvas_pos,
-                                                                                                image=self.sprites[
-                                                                                                    'settlement_placeholder'],
-                                                                                                state="hidden")
+            self.canvas_phantom_settlements[vertex_canvas_pos] = self.create_settlement_icon(vertex_canvas_pos[0],
+                                                                                             vertex_canvas_pos[1], '',
+                                                                                             state='hidden')
+            self.vertex_at_canvas_position[str(vertex_canvas_pos)] = vertex
 
         for edge in self.board.get_edges():
             # average of vertex positions
@@ -226,6 +286,12 @@ class GameWindow:
             edge.set_canvas_pos(
                 ((vertex_pos_list[0][0] + vertex_pos_list[1][0]) / 2,
                  (vertex_pos_list[0][1] + vertex_pos_list[1][1]) / 2))
+            edge_canvas_pos = edge.get_canvas_pos()
+            self.edge_at_canvas_position[str(edge_canvas_pos)] = edge
+            slope = (vertex_pos_list[1][1] - vertex_pos_list[0][1]) / (vertex_pos_list[1][0] - vertex_pos_list[0][0])
+            rotation_angle = (0 if slope == 0.0 else (60 if slope > 0 else -60))
+            edge.set_rotation_angle(rotation_angle)
+            self.canvas_phantom_roads[edge_canvas_pos] = self.create_road_icon(edge_canvas_pos[0], edge_canvas_pos[1], rotation_angle, '', state='hidden')
 
         clone = tortoise.clone()
         clone.color(COLOR_BRIDGE)
@@ -251,9 +317,37 @@ class GameWindow:
             self.root.update_idletasks()
             self.root.after(100, check_for_updates)
 
+        self.display_text("done")
+
+        self.setup_turn()
+
         self.root.after(0, check_for_updates)
 
         self.root.mainloop()
+
+    def create_settlement_icon(self, center_x, center_y, fill, state='normal'):
+        settlement_size = 7
+
+        points = [
+            center_x + settlement_size, center_y + settlement_size,
+            center_x - settlement_size, center_y + settlement_size,
+            center_x - settlement_size, center_y,
+            center_x, center_y - settlement_size,
+            center_x + settlement_size, center_y,
+            center_x + settlement_size, center_y + settlement_size
+        ]
+        return self.canvas.create_polygon(points, fill=fill, outline="black", state=state)
+
+    def create_road_icon(self, center_x, center_y, rotation_angle, fill, state='normal'):
+        road_size = 15
+        points = [
+            [center_x + road_size, center_y + 0.25 * road_size],
+            [center_x - road_size, center_y + 0.25 * road_size],
+            [center_x - road_size, center_y - 0.25 * road_size],
+            [center_x + road_size, center_y - 0.25 * road_size]
+        ]
+        points = rotate(points, rotation_angle, [mean([x[0] for x in points]), mean([x[1] for x in points])])
+        return self.canvas.create_polygon(points, fill=fill, outline="black", state=state)
 
     def _load_sprites(self):
         grain = Image.open("sprites/grain.png")
@@ -289,34 +383,97 @@ class GameWindow:
         settlement = settlement.resize((20, 20), Image.LANCZOS)
         self.sprites['settlement_placeholder'] = ImageTk.PhotoImage(settlement)
 
+    def display_text(self, text: str):
+        self.display.configure(state=NORMAL)
+        self.display.insert(tkinter.END, text + "\n")
+        self.display.configure(state=DISABLED)
+
+    def setup_turn(self):
+        self.display_text("Please place a settlement.")
+        self.show_available_setup_settlement_spots()
+
     def draw_settlement(self, pos: Tuple[float, float]):
         """
         Draw a settlement at this position, whose color corresponds to the player whose turn it is
         """
         color_name = self.game.players[self.game.current_turn].color.name.lower()
-        self.update_stack.append((pos, self.sprites[f'settlement_{color_name}']))
+        self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], fill=color_name)
+        self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal')
 
-    def draw_and_clear(self, pos: Tuple[float, float]):
+    def draw_road(self, pos: Tuple[float, float]):
+        color_name = self.game.players[self.game.current_turn].color.name.lower()
+        self.canvas.itemconfigure(self.canvas_phantom_roads[pos], fill=color_name)
+        self.canvas.itemconfigure(self.canvas_phantom_roads[pos], state='normal')
+
+    def build_settlement(self, pos: Tuple[float, float], for_free=False):
         """
-        Draw a settlement at this position, whose color corresponds to the player whose turn it is.
+        Build a settlement for the current player at the vertex associated with this screen position.
         Then, stop any ongoing settlement animations.
+        for_free is True if the game is in the setup phase
         """
-        self.draw_settlement(pos)
+        player = self.game.players[self.game.current_turn]
+        if for_free:
+            player.place_settlement(self.vertex_at_canvas_position[str(pos)])
+        else:
+            player.build_settlement(self.vertex_at_canvas_position[str(pos)])
         self.phantom_settlements_anim = False
-        for pos in self.canvas_phantom_settlements:
-            self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='hidden')
-            self.canvas.tag_unbind(self.canvas_phantom_settlements[pos], "<Button-1>")
+        for x in self.canvas_phantom_settlements:
+            self.canvas.itemconfigure(self.canvas_phantom_settlements[x], state='hidden')
+            self.canvas.tag_unbind(self.canvas_phantom_settlements[x], "<Button-1>")
+        self.draw_settlement(pos)
 
-    def show_available_settlement_spots(self):
+    def build_road(self, pos: Tuple[float, float], for_free=False):
+        player = self.game.players[self.game.current_turn]
+        if for_free:
+            player.place_road(self.edge_at_canvas_position[str(pos)])
+        else:
+            player.build_road(self.edge_at_canvas_position[str(pos)])
+        self.phantom_roads_anim = False
+        for x in self.canvas_phantom_roads:
+            self.canvas.itemconfigure(self.canvas_phantom_roads[x], state='hidden')
+            self.canvas.tag_unbind(self.canvas_phantom_roads[x], "<Button-1>")
+        self.draw_road(pos)
+
+    def build_setup_settlement(self, pos: Tuple[float, float], for_free=True):
+        self.build_settlement(pos, for_free)
+        self.show_available_road_spots()
+
+    def build_setup_road(self, pos: Tuple[float, float], for_free=True):
+        self.build_road(pos, for_free)
+        # TODO: start computer agents turns
+
+    def show_available_setup_settlement_spots(self):
         # icons should place a settlement when clicked
         for pos in self.canvas_phantom_settlements:
-            i = self.canvas.tag_bind(self.canvas_phantom_settlements[pos], "<Button-1>", lambda x, pos=pos: self.draw_and_clear(pos))
+            self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal')
+            self.canvas.tag_bind(self.canvas_phantom_settlements[pos], "<Button-1>",
+                                 lambda x, pos=pos: self.build_setup_settlement(pos))
         self.toggle_available_settlement_spots(True)
+
+    def show_available_settlement_spots(self):
+        raise NotImplementedError()
+
+    def show_available_road_spots(self):
+        available_road_spots = self.game.get_available_road_spots(self.game.players[self.game.current_turn].id)
+        positions = [e.get_canvas_pos() for e in available_road_spots]
+        for pos in [e.get_canvas_pos() for e in available_road_spots]:
+            self.canvas.itemconfigure(self.canvas_phantom_roads[pos], state='normal')
+            self.canvas.tag_bind(self.canvas_phantom_roads[pos], "<Button-1>",
+                                 lambda x, pos=pos: self.build_setup_road(pos))
+        self.toggle_available_road_spots(positions, True)
 
     def toggle_available_settlement_spots(self, on: bool):
         if self.phantom_settlements_anim:
             for pos in self.canvas_phantom_settlements:
-                self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal' if on else 'hidden')
+                self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], fill='grey' if on else '')
             self.canvas.after(500, lambda: self.toggle_available_settlement_spots(not on))
         else:
             self.phantom_settlements_anim = True
+
+    def toggle_available_road_spots(self, spots: List[Tuple[float, float]], on: bool):
+        if self.phantom_roads_anim:
+            for pos in spots:
+                self.canvas.itemconfigure(self.canvas_phantom_roads[pos], fill='grey' if on else '')
+            self.canvas.after(500, lambda: self.toggle_available_road_spots(spots, not on))
+        else:
+            self.phantom_roads_anim = True
