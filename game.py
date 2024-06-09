@@ -159,9 +159,11 @@ class Game:
                 continue
         return res
 
-    def get_available_settlement_spots(self, player_id: int) -> List[Vertex]:
+    def get_available_settlement_spots(self, player_id: int, is_setup_phase: bool) -> List[Vertex]:
         """
         Given a player, return all vertices that this player can build a settlement on.
+        When is_setup_phase is True, the player is only bound by the "must not be adjacent to another settlement" build
+        rule, and not the "must be adjacent to one of your roads" build rule.
         """
         res = []
         for vertex in self.board.vertex_graph.nodes:
@@ -170,13 +172,16 @@ class Game:
                 continue
             for neighbor in self.board.vertex_graph.neighbors(vertex):
                 neighbor_obj = self.board.vertex_objects[neighbor]
-                if neighbor_obj.get_player_id() not in [-1, player_id]:
+                if neighbor_obj.get_player_id() != -1:
                     break
             else:
-                for edge_obj in self.board.get_edges_from_vertex(vertex_obj):
-                    if edge_obj.get_player_road_id() == player_id:
-                        res.append(vertex_obj)
-                        break
+                if is_setup_phase:
+                    res.append(vertex_obj)
+                else:
+                    for edge_obj in self.board.get_edges_from_vertex(vertex_obj):
+                        if edge_obj.get_player_road_id() == player_id:
+                            res.append(vertex_obj)
+                            break
         return res
 
     def advance_turn(self) -> int:

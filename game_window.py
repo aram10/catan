@@ -454,7 +454,8 @@ class GameWindow:
 
     def user_show_available_setup_settlement_spots(self, continuation):
         # icons should place a settlement when clicked
-        for pos in self.canvas_phantom_settlements:
+        for vertex_obj in self.game.get_available_settlement_spots(0, True):
+            pos = vertex_obj.canvas_pos
             self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal')
             self.canvas.tag_bind(self.canvas_phantom_settlements[pos], "<Button-1>",
                                  lambda x, pos=pos: self.user_build_setup_settlement(pos, continuation))
