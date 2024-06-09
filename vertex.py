@@ -39,5 +39,5 @@ class Vertex:
     def get_canvas_pos(self) -> Tuple[int, int]:
         return self.canvas_pos
 
-    def set_canvas_pos(self, pos: Tuple[int,int]):
+    def set_canvas_pos(self, pos: Tuple[int, int]):
         self.canvas_pos = pos

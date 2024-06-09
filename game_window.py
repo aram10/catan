@@ -148,7 +148,7 @@ class GameWindow:
         self.roll_button.pack(side="left", padx=5, pady=5)
 
         self.settlement_button = tkinter.Button(self.button_row_1, text="Build Settlement",
-                                                command=self.show_available_setup_settlement_spots, state=DISABLED)
+                                                command=self.user_show_available_setup_settlement_spots, state=DISABLED)
         self.settlement_button.pack(side="left", padx=5, pady=5)
 
         self.city_button = tkinter.Button(self.button_row_1, text="Build City", state=DISABLED)
@@ -291,7 +291,8 @@ class GameWindow:
             slope = (vertex_pos_list[1][1] - vertex_pos_list[0][1]) / (vertex_pos_list[1][0] - vertex_pos_list[0][0])
             rotation_angle = (0 if slope == 0.0 else (60 if slope > 0 else -60))
             edge.set_rotation_angle(rotation_angle)
-            self.canvas_phantom_roads[edge_canvas_pos] = self.create_road_icon(edge_canvas_pos[0], edge_canvas_pos[1], rotation_angle, '', state='hidden')
+            self.canvas_phantom_roads[edge_canvas_pos] = self.create_road_icon(edge_canvas_pos[0], edge_canvas_pos[1],
+                                                                               rotation_angle, '', state='hidden')
 
         clone = tortoise.clone()
         clone.color(COLOR_BRIDGE)
@@ -319,7 +320,7 @@ class GameWindow:
 
         self.display_text("done")
 
-        self.setup_turn()
+        self.setup_turn(0)
 
         self.root.after(0, check_for_updates)
 
@@ -388,92 +389,101 @@ class GameWindow:
         self.display.insert(tkinter.END, text + "\n")
         self.display.configure(state=DISABLED)
 
-    def setup_turn(self):
+    def setup_turn(self, turn_counter: int):
+        if turn_counter == 2 * len(self.game.players) - 1:
+            self.display_text("Setup phase finished.")
+            return
+
+        def continuation():
+            self.game.advance_turn()
+            self.setup_turn(turn_counter + 1)
+
+        if self.game.current_turn == 0:
+            self.user_setup_turn(continuation=continuation)
+        else:
+            self.display_text(f"Turn {turn_counter}. It is Player {self.game.current_turn}'s turn")
+            continuation()
+
+    def user_setup_turn(self, continuation):
         self.display_text("Please place a settlement.")
-        self.show_available_setup_settlement_spots()
+        self.user_show_available_setup_settlement_spots(continuation)
 
     def draw_settlement(self, pos: Tuple[float, float]):
         """
-        Draw a settlement at this position, whose color corresponds to the player whose turn it is
+        Draw a settlement at this position, whose color corresponds to the player whose turn it is. Then, remove the
+        settlement object from the canvas_phantom_settlements dict, so it cannot be drawn again.
         """
         color_name = self.game.players[self.game.current_turn].color.name.lower()
         self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], fill=color_name)
         self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal')
+        del self.canvas_phantom_settlements[pos]
 
     def draw_road(self, pos: Tuple[float, float]):
         color_name = self.game.players[self.game.current_turn].color.name.lower()
         self.canvas.itemconfigure(self.canvas_phantom_roads[pos], fill=color_name)
         self.canvas.itemconfigure(self.canvas_phantom_roads[pos], state='normal')
+        del self.canvas_phantom_roads[pos]
 
-    def build_settlement(self, pos: Tuple[float, float], for_free=False):
+    def draw_city(self, pos: Tuple[float, float]):
+        raise NotImplementedError()
+
+    def user_build_settlement(self, pos: Tuple[float, float], is_game_start):
         """
-        Build a settlement for the current player at the vertex associated with this screen position.
+        Build a settlement for the user at the vertex associated with this screen position.
         Then, stop any ongoing settlement animations.
-        for_free is True if the game is in the setup phase
         """
-        player = self.game.players[self.game.current_turn]
-        if for_free:
-            player.place_settlement(self.vertex_at_canvas_position[str(pos)])
-        else:
-            player.build_settlement(self.vertex_at_canvas_position[str(pos)])
+        self.game.build_settlement(0, self.vertex_at_canvas_position[str(pos)], is_game_start)
         self.phantom_settlements_anim = False
         for x in self.canvas_phantom_settlements:
             self.canvas.itemconfigure(self.canvas_phantom_settlements[x], state='hidden')
             self.canvas.tag_unbind(self.canvas_phantom_settlements[x], "<Button-1>")
         self.draw_settlement(pos)
 
-    def build_road(self, pos: Tuple[float, float], for_free=False):
-        player = self.game.players[self.game.current_turn]
-        if for_free:
-            player.place_road(self.edge_at_canvas_position[str(pos)])
-        else:
-            player.build_road(self.edge_at_canvas_position[str(pos)])
+    def user_build_road(self, pos: Tuple[float, float], is_game_start):
+        self.game.build_road(0, self.edge_at_canvas_position[str(pos)], is_game_start)
         self.phantom_roads_anim = False
         for x in self.canvas_phantom_roads:
             self.canvas.itemconfigure(self.canvas_phantom_roads[x], state='hidden')
             self.canvas.tag_unbind(self.canvas_phantom_roads[x], "<Button-1>")
         self.draw_road(pos)
 
-    def build_setup_settlement(self, pos: Tuple[float, float], for_free=True):
-        self.build_settlement(pos, for_free)
-        self.show_available_road_spots()
+    def user_build_setup_settlement(self, pos: Tuple[float, float], continuation):
+        self.user_build_settlement(pos, True)
+        self.display_text("Please place a road.")
+        self.user_show_available_road_spots(continuation, True)
 
-    def build_setup_road(self, pos: Tuple[float, float], for_free=True):
-        self.build_road(pos, for_free)
-        # TODO: start computer agents turns
-
-    def show_available_setup_settlement_spots(self):
+    def user_show_available_setup_settlement_spots(self, continuation):
         # icons should place a settlement when clicked
         for pos in self.canvas_phantom_settlements:
             self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal')
             self.canvas.tag_bind(self.canvas_phantom_settlements[pos], "<Button-1>",
-                                 lambda x, pos=pos: self.build_setup_settlement(pos))
-        self.toggle_available_settlement_spots(True)
+                                 lambda x, pos=pos: self.user_build_setup_settlement(pos, continuation))
+        self.user_toggle_available_settlement_spots(True)
 
-    def show_available_settlement_spots(self):
-        raise NotImplementedError()
-
-    def show_available_road_spots(self):
+    def user_show_available_road_spots(self, continuation, is_game_start):
         available_road_spots = self.game.get_available_road_spots(self.game.players[self.game.current_turn].id)
         positions = [e.get_canvas_pos() for e in available_road_spots]
         for pos in [e.get_canvas_pos() for e in available_road_spots]:
-            self.canvas.itemconfigure(self.canvas_phantom_roads[pos], state='normal')
-            self.canvas.tag_bind(self.canvas_phantom_roads[pos], "<Button-1>",
-                                 lambda x, pos=pos: self.build_setup_road(pos))
-        self.toggle_available_road_spots(positions, True)
+            def on_build_setup_road(x, pos=pos):
+                self.user_build_road(pos, is_game_start)
+                continuation()
 
-    def toggle_available_settlement_spots(self, on: bool):
+            self.canvas.itemconfigure(self.canvas_phantom_roads[pos], state='normal')
+            self.canvas.tag_bind(self.canvas_phantom_roads[pos], "<Button-1>", on_build_setup_road)
+        self.user_toggle_available_road_spots(positions, True)
+
+    def user_toggle_available_settlement_spots(self, on: bool):
         if self.phantom_settlements_anim:
             for pos in self.canvas_phantom_settlements:
                 self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], fill='grey' if on else '')
-            self.canvas.after(500, lambda: self.toggle_available_settlement_spots(not on))
+            self.canvas.after(500, lambda: self.user_toggle_available_settlement_spots(not on))
         else:
             self.phantom_settlements_anim = True
 
-    def toggle_available_road_spots(self, spots: List[Tuple[float, float]], on: bool):
+    def user_toggle_available_road_spots(self, spots: List[Tuple[float, float]], on: bool):
         if self.phantom_roads_anim:
             for pos in spots:
                 self.canvas.itemconfigure(self.canvas_phantom_roads[pos], fill='grey' if on else '')
-            self.canvas.after(500, lambda: self.toggle_available_road_spots(spots, not on))
+            self.canvas.after(500, lambda: self.user_toggle_available_road_spots(spots, not on))
         else:
             self.phantom_roads_anim = True

@@ -24,11 +24,18 @@ class Game:
                 self.players.append(Player(i, PLAYERCOLOR(i)))
         else:
             self.board = Board(3)
-        # the user of the GUI is always player 0, and will always roll first
-        self.current_turn = 0
+        self.num_players = len(self.players)
+        # the user of the GUI is always player 0
+        self.turn_order = list(range(self.num_players))
+        random.shuffle(self.turn_order)
+        self.current_turn_idx = 0
         self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
         self.player_buildings = defaultdict(set)
         self.player_roads = defaultdict(set)
+
+    @property
+    def current_turn(self):
+        return self.turn_order[self.current_turn_idx]
 
     def roll(self, player: Player):
         """
@@ -150,14 +157,6 @@ class Game:
             if v1.get_player_id() == player_id or v2.get_player_id() == player_id:
                 res.append(edge_obj)
                 continue
-            for e2 in self.board.get_edges_from_vertex(v1):
-                if e2.get_player_road_id() == player_id:
-                    res.append(edge_obj)
-                    continue
-            for e2 in self.board.get_edges_from_vertex(v2):
-                if e2.get_player_road_id() == player_id:
-                    res.append(edge_obj)
-                    continue
         return res
 
     def get_available_settlement_spots(self, player_id: int) -> List[Vertex]:
@@ -179,6 +178,13 @@ class Game:
                         res.append(vertex_obj)
                         break
         return res
+
+    def advance_turn(self) -> int:
+        """
+        Start the turn of the next player, and return that player ID
+        """
+        self.current_turn_idx = (self.current_turn_idx + 1) % self.num_players
+        return self.turn_order[self.current_turn_idx]
 
     def get_player(self, player_id: int) -> Player:
         return self.players[player_id]

@@ -11,6 +11,10 @@ from vertex import Vertex
 
 
 class Player:
+    """
+    Anyone playing Catan, human or otherwise, extends the Player class, which tracks and manages the
+    points/cards/resources of a player.
+    """
 
     def __init__(self, player_id: int, color: PLAYERCOLOR, available_settlements: int = 5, available_roads: int = 15,
                  available_cities: int = 4):
@@ -30,34 +34,6 @@ class Player:
         self.has_longest_road = False
         self.first_settlement = None
         self.second_settlement = None
-
-    def take_setup_turn(self, game: 'Game', give_resources=False):
-        pass
-
-    def take_turn(self, game: 'Game'):
-        pass
-
-    def handle_roll(self, roll: int):
-        """
-        Invoked whenever the dice are rolled. Handles resource production for this player.
-        :param roll: The dice roll.
-        """
-        pass
-
-    def select_tile_for_robber(self, game: 'Game') -> Tile:
-        return game.board.fetch_random_tile()
-
-    def select_player_to_steal_from(self, game: 'Game', tile: Tile) -> 'Player':
-        return random.choice(game.get_players_on_tile(tile))
-
-    def select_road_building_spot(self, game: 'Game', available_spots: List[Edge]) -> Edge:
-        return random.choice(available_spots)
-
-    def select_year_of_plenty_resource(self, game: 'Game') -> RESOURCE:
-        return RESOURCE(random.choice(range(5)))
-
-    def select_monopoly_resource(self, game: 'Game') -> RESOURCE:
-        return RESOURCE(random.choice(range(5)))
 
     def get_player_id(self) -> int:
         return self.id
@@ -170,6 +146,71 @@ class Player:
         return isinstance(other, Player) and self.id == other.get_player_id()
 
 
+class Agent(ABC):
+    """
+    In lieu of human input via the GUI, the Agent class is an interface by which a computer player plays the game.
+    """
+
+    def __init__(self, player: Player, game: 'Game'):
+        self.player = player
+        self.game = game
+
+    @abstractmethod
+    def take_setup_turn(self, give_resources=False):
+        ...
+
+    @abstractmethod
+    def take_turn(self):
+        ...
+
+    @abstractmethod
+    def select_tile_for_robber(self) -> Tile:
+        ...
+
+    @abstractmethod
+    def select_player_to_steal_from(self, tile: Tile) -> 'Player':
+        ...
+
+    @abstractmethod
+    def select_road_building_spot(self, available_spots: List[Edge]) -> Edge:
+        ...
+
+    @abstractmethod
+    def select_year_of_plenty_resource(self) -> RESOURCE:
+        ...
+
+    @abstractmethod
+    def select_monopoly_resource(self) -> RESOURCE:
+        ...
+
+
+class RandomAgent(Agent):
+    """
+    An agent that can fully play the game, but makes every choice at random.
+    """
+
+    def take_setup_turn(self, give_resources=False):
+        raise NotImplementedError()
+
+    def take_turn(self):
+        raise NotImplementedError()
+
+    def select_tile_for_robber(self) -> Tile:
+        return self.game.board.fetch_random_tile()
+
+    def select_player_to_steal_from(self, tile: Tile) -> 'Player':
+        return random.choice(self.game.get_players_on_tile(tile))
+
+    def select_road_building_spot(self, available_spots: List[Edge]) -> Edge:
+        return random.choice(available_spots)
+
+    def select_year_of_plenty_resource(self) -> RESOURCE:
+        return RESOURCE(random.choice(range(5)))
+
+    def select_monopoly_resource(self) -> RESOURCE:
+        return RESOURCE(random.choice(range(5)))
+
+
 class VisualPlayer(Player):
     """
     Player class that interacts with tkinter Canvas to render building a settlement/city/road and moving the robber
@@ -180,6 +221,21 @@ class VisualPlayer(Player):
         super().__init__(self, player_id, color, available_settlements, available_roads, available_cities)
         self.gw = gw
 
+    def build_road(self, edge: Edge):
+        super().build_road(edge)
+        self.gw.draw_road(edge.get_canvas_pos())
+
+    def build_settlement(self, vertex: Vertex):
+        super().build_settlement(vertex)
+        self.gw.draw_settlement(vertex.get_canvas_pos())
+
     def build_city(self, vertex: Vertex):
-        Player.build_city(self, vertex)
-        self.gw.draw_settlement(vertex, self.color)
+        super().build_city(vertex)
+        self.gw.draw_city(vertex.get_canvas_pos())
+
+
+class UserVisualPlayer(VisualPlayer):
+    """
+    The special VisualPlayer object associated with the human user. Updates the text and the buttons in the GUI.
+    """
+    pass
