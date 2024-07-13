@@ -55,7 +55,9 @@ def generate_board(n: int) -> Tuple[TileGrid, TileCoords]:
     tile_coords = set()
     # fill in center row
     for i in range(2 * n + 1):
-        tile_grid[n][i] = tiles.pop().set_coords(i, n)
+        temp = tiles.pop()
+        temp.coords = (i, n)
+        tile_grid[n][i] = temp
         tile_coords.add((i, n, -i - n))
     # fill in everything above and below center row
     i = 1
@@ -64,11 +66,15 @@ def generate_board(n: int) -> Tuple[TileGrid, TileCoords]:
         tiles_upper = []
         tiles_lower = []
         for k in range(i, 2 * n + 1):
-            tiles_upper.append(tiles.pop().set_coords(k, j))
+            temp = tiles.pop()
+            temp.coords = (k, j)
+            tiles_upper.append(temp)
             tile_coords.add((k, j, -k - j))
         tile_grid[j][i:] = tiles_upper
         for k in range(2 * n - i + 1):
-            tiles_lower.append(tiles.pop().set_coords(k, 2 * n - j))
+            temp = tiles.pop()
+            temp.coords = (k, 2 * n - j)
+            tiles_lower.append(temp)
             tile_coords.add((k, 2 * n - j, -k - 2 * n + j))
         tile_grid[2 * n - j][:2 * n - i + 1] = tiles_lower
         i += 1
@@ -77,7 +83,7 @@ def generate_board(n: int) -> Tuple[TileGrid, TileCoords]:
 
 
 def get_edge_coords_from_tile(tile: Tile) -> EdgeCoords:
-    q, r = tile.get_coords()
+    q, r = tile.coords
     return {(2 * q, 2 * r - 1),
             (2 * q + 1, 2 * r - 1),
             (2 * q + 1, 2 * r),
@@ -114,17 +120,17 @@ class Board:
             # if tile is on outer edge (i.e., water tile), don't give it resource/chit
             if coord[0] == 0 or coord[0] == 2 * board_size or coord[1] == 0 or coord[1] == 2 * board_size or coord[0] + \
                     coord[1] == board_size or coord[0] + coord[1] == 3 * board_size:
-                tile.set_resource(RESOURCE.WATER)
+                tile.resource = RESOURCE.WATER
             else:
                 resource, chit_val = tile_data.pop()
                 if resource != RESOURCE.DESERT:
                     # enforce rule that there are no 8-8, 6-6, or 8-6 connections
-                    neighbor_rolls = {x.get_dice_num() for x in self.get_neighboring_tiles(tile)}
+                    neighbor_rolls = {x.dice_num for x in self.get_neighboring_tiles(tile)}
                     if 6 in neighbor_rolls or 8 in neighbor_rolls:
                         chit_val = remaining_chits[
                             np.where(np.random.multinomial(1, constants.CHIT_DIST_MOD) == 1)[0][0]]
-                tile.set_resource(resource)
-                tile.set_dice_num(chit_val)
+                tile.resource = resource
+                tile.dice_num = chit_val
             self.tile_graph.add_node(tile)
         # create vertices and add them to the graph
         tiles = []
@@ -136,10 +142,10 @@ class Board:
         # this is why we have to delay setting a tile's vertices
         for el in tiles:
             tile, vertices = el
-            tile.set_vertices({self.vertex_objects[v] for v in vertices})
+            tile.vertices = {self.vertex_objects[v] for v in vertices}
         # Note that edges have their own coordinate system while vertices are defined by their incident tiles
         self.edges = [[Edge(i, j) for j in range(2 * num_tiles + 2)] for i in range(2 * num_tiles + 2)]
-        c = Counter([v.get_resource() for v in self.vertex_objects.values() if isinstance(v, Port)])
+        c = Counter([v.resource for v in self.vertex_objects.values() if isinstance(v, Port)])
 
     def __link_tile_and_vertices(self, tile: Tile) -> Set[Vertex]:
         """
@@ -152,18 +158,17 @@ class Board:
         attrs = {}
         vertices = set()
         neighbors = self.get_neighboring_tiles(tile)
-        tile_coords = tile.get_coords()
-        tile_shore = (tile.get_resource() == RESOURCE.WATER)
+        tile_shore = (tile.resource == RESOURCE.WATER)
         for n1 in neighbors:
-            n1_shore = (n1.get_resource() == RESOURCE.WATER)
+            n1_shore = (n1.resource == RESOURCE.WATER)
             n1_neighbors = self.get_neighboring_tiles(n1)
             n2_neighbors = list(neighbors.intersection(n1_neighbors))
             assert (len(n2_neighbors) == 2 or len(n2_neighbors) == 1)
             # neighboring tiles share 2 common neighbors (if neither are corner water tiles)
             # defines two vertices connected by an edge - add this connection to the graph
             t1 = n2_neighbors[0]
-            t1_shore = (t1.get_resource() == RESOURCE.WATER)
-            v1 = frozenset({tile_coords, n1.get_coords(), t1.get_coords()})
+            t1_shore = (t1.resource == RESOURCE.WATER)
+            v1 = frozenset({tile.coords, n1.coords, t1.coords})
             vertices.add(v1)
             if v1 not in self.vertex_graph:
                 shore = (tile_shore or n1_shore or t1_shore)
@@ -174,8 +179,8 @@ class Board:
             self.tile_graph.add_edge(tile, v1)
             if len(n2_neighbors) == 2:
                 t2 = n2_neighbors[1]
-                t2_shore = (t2.get_resource() == RESOURCE.WATER)
-                v2 = frozenset({tile_coords, n1.get_coords(), t2.get_coords()})
+                t2_shore = (t2.resource == RESOURCE.WATER)
+                v2 = frozenset({tile.coords, n1.coords, t2.coords})
                 vertices.add(v2)
                 if v2 not in self.vertex_graph:
                     shore = (tile_shore or n1_shore or t2_shore)
@@ -256,7 +261,7 @@ class Board:
 
         This method returns True if there is a new longest road, and False otherwise.
         """
-        p_id = starting_road.get_player_road_id()
+        p_id = starting_road.player_road_id
         if p_id == -1:
             raise ValueError("Cannot check for longest road starting on an Edge with no road built on it.")
         graph_edge = self.get_graph_edge_from_edge(starting_road)
@@ -268,7 +273,7 @@ class Board:
         vertices = set().union(*[vertex for edge in edges for vertex in edge])
         boundary_vertices = set(v for v in vertices if len([(a, b) for a, b in self.vertex_graph.edges(v) if
                                                             self.get_edge_from_graph_edge(
-                                                                (a, b)).get_player_road_id() == p_id]) == 1)
+                                                                (a, b)).player_road_id == p_id]) == 1)
         edges = sorted(edges, key=lambda e: e[0] not in boundary_vertices and e[1] not in boundary_vertices)
         # we want to treat the edges (roads) as the vertices themselves
         for i, edge in enumerate(edges):
@@ -280,7 +285,7 @@ class Board:
                 for node in [node_1, node_2]:
                     for neighbor_node in self.vertex_graph.neighbors(node):
                         e = self.get_edge_from_graph_edge((node, neighbor_node))
-                        if e.get_player_road_id() == p_id and self.vertex_graph[node][neighbor_node]['visited'] != i:
+                        if e.player_road_id == p_id and self.vertex_graph[node][neighbor_node]['visited'] != i:
                             if -dist + 1 > curr_longest:
                                 return True
                             heapq.heappush(pq, (dist - 1, (node, neighbor_node)))
@@ -298,7 +303,7 @@ class Board:
             curr = queue.popleft()
             for neighbor in self.vertex_graph.neighbors(curr):
                 edge = self.get_edge_from_graph_edge((curr, neighbor))
-                if edge.get_player_road_id() == player_road_id and not visited[frozenset({curr, neighbor})]:
+                if edge.player_road_id == player_road_id and not visited[frozenset({curr, neighbor})]:
                     visited[frozenset({start, neighbor})] = True
                     queue.append(neighbor)
                     res.append(frozenset({start, neighbor}))
@@ -321,8 +326,7 @@ class Board:
 
     def get_neighboring_tiles(self, tile: Tile) -> Set[Tile]:
         res = set()
-        coords = tile.get_coords()
-        q, r = coords[0], coords[1]
+        q, r = tile.coords
         if (t1 := self.get_tile(max(q - 1, 0), r + 1)) is not None:
             res.add(t1)
         if (t2 := self.get_tile(q, r + 1)) is not None:
@@ -341,7 +345,7 @@ class Board:
         return {self.edges[x][y] for (x, y) in get_edge_coords_from_tile(tile)}
 
     def get_edges_from_vertex(self, vertex: Vertex) -> List[Edge]:
-        v_id = vertex.get_vertex_id()
+        v_id = vertex.vertex_id
         res = []
         for x in self.vertex_graph.adj[v_id]:
             i, j = self.vertex_graph.get_edge_data(v_id, x)['obj']
@@ -359,7 +363,7 @@ class Board:
         """
         res = []
         for tile in self.get_tiles():
-            if tile.get_dice_num() == chit:
+            if tile.dice_num == chit:
                 res.append(tile)
         return res
 
@@ -377,7 +381,7 @@ class Board:
     def get_desert_tiles(self) -> Set[Tile]:
         tiles = set()
         for tile in self.get_tiles():
-            if tile.get_resource() == RESOURCE.DESERT:
+            if tile.resource == RESOURCE.DESERT:
                 tiles.add(tile)
         return tiles
 
@@ -388,14 +392,14 @@ class Board:
         return set(self.vertex_objects[x] for x in self.tile_graph.adj[t])
 
     def vertices_are_adjacent(self, v1: Vertex, v2: Vertex) -> bool:
-        return v1.get_vertex_id() in self.vertex_graph.neighbors(v2.get_vertex_id())
+        return v1.vertex_id in self.vertex_graph.neighbors(v2.vertex_id)
 
     def get_edge_from_graph_edge(self, graph_edge: GraphEdge) -> Edge:
         i, j = self.vertex_graph.get_edge_data(graph_edge[0], graph_edge[1])['obj']
         return self.edges[i][j]
 
     def get_graph_edge_from_edge(self, edge: Edge) -> Optional[GraphEdge]:
-        i, j = edge.get_coords()
+        i, j = edge.coords
         graph_edge = [(u, v) for u, v, e in self.vertex_graph.edges(data=True) if e['obj'] == (i, j)]
         if len(graph_edge) == 0:
             return None

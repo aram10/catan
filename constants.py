@@ -56,3 +56,5 @@ probability mass for 6 and 8 have been equally divided among the remaining chits
 """
 CHIT_DIST_MOD = [1 / 18 + 1 / 36, 1 / 9 + 1 / 36, 1 / 9 + 1 / 36, 1 / 9 + 1 / 36, 1 / 9 + 1 / 36, 1 / 9 + 1 / 36,
                  1 / 9 + 1 / 36, 1 / 18 + 1 / 36]
+
+MAX_TRADE_PROPOSALS = 5

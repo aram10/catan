@@ -9,10 +9,6 @@ class DevelopmentCard(ABC):
     def __init__(self, dev_type: DEVELOPMENT):
         self.dev_type = dev_type
 
-    @property
-    def dev_type(self):
-        return self.dev_type
-
     @abstractmethod
     def apply_action(self, game: Game, player_id: int):
         ...

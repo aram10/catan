@@ -230,51 +230,49 @@ class GameWindow:
         y_off += ROOT3_OVER_2 * SIDE
         x_off -= SIDE / 2
         for tile in self.board.get_tiles():
-            hexcoord = tile.get_coords()
-            r = tile.get_resource()
-            color = color_map[r.value]
-            pos = hex_to_rect(hexcoord)
+            color = color_map[tile.resource.value]
+            pos = hex_to_rect(tile.coords)
             pos = (pos[0] - x_off, pos[1] - y_off)
             tortoise.goto(pos)
-            clone, p = hexagon(tortoise, SIDE, color, self.board.get_tile(hexcoord[0], hexcoord[1]).get_dice_num())
-            tile_positions[tile.get_coords()] = p
-            tile.set_canvas_pos(p)
-            if r == RESOURCE.WATER:
-                ports = [v for v in tile.get_vertices() if isinstance(v, Port)]
-                c = Counter([v.get_resource() for v in ports])
+            clone, p = hexagon(tortoise, SIDE, color, self.board.get_tile(tile.coords[0], tile.coords[1]).dice_num)
+            tile_positions[tile.coords] = p
+            tile.canvas_pos = p
+            if tile.resource == RESOURCE.WATER:
+                ports = [v for v in tile.vertices if isinstance(v, Port)]
+                c = Counter([v.resource for v in ports])
                 pr = max(c, key=c.get)
-                ports_of_resource_in_question = [v for v in ports if v.get_resource() == pr]
-                if r == RESOURCE.WATER and c[pr] >= 2:
+                ports_of_resource_in_question = [v for v in ports if v.resource == pr]
+                if tile.resource == RESOURCE.WATER and c[pr] >= 2:
                     # could be 3 ports of same resource, but port tile only "owns" two of them
                     if c[pr] == 2 and self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
                                                                        ports_of_resource_in_question[1]):
                         icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
-                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
-                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].vertex_id))
+                        lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].vertex_id))
                     elif c[pr] == 3:
                         if self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
                                                             ports_of_resource_in_question[1]):
                             icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
-                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
-                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
+                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].vertex_id))
+                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].vertex_id))
                         elif self.board.vertices_are_adjacent(ports_of_resource_in_question[1],
                                                               ports_of_resource_in_question[2]):
                             icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
-                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].get_vertex_id()))
-                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
+                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[1].vertex_id))
+                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].vertex_id))
                         elif self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
                                                               ports_of_resource_in_question[2]):
                             icon_stack.append((clone.pos(), self.sprites[pr.name.lower()]))
-                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].get_vertex_id()))
-                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].get_vertex_id()))
+                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[0].vertex_id))
+                            lines_to_draw.append((clone.pos(), ports_of_resource_in_question[2].vertex_id))
 
         # calculate canvas positions of vertices/edges for future drawing
         for vertex in self.board.get_vertices():
             # average of tile center positions
-            tile_pos_list = [tile.get_canvas_pos() for tile in self.board.get_tiles_from_vertex(vertex)]
-            vertex.set_canvas_pos(((tile_pos_list[0][0] + tile_pos_list[1][0] + tile_pos_list[2][0]) / 3,
-                                   (tile_pos_list[0][1] + tile_pos_list[1][1] + tile_pos_list[2][1]) / 3))
-            vertex_canvas_pos = vertex.get_canvas_pos()
+            tile_pos_list = [tile.canvas_pos for tile in self.board.get_tiles_from_vertex(vertex)]
+            vertex.canvas_pos = ((tile_pos_list[0][0] + tile_pos_list[1][0] + tile_pos_list[2][0]) / 3,
+                                 (tile_pos_list[0][1] + tile_pos_list[1][1] + tile_pos_list[2][1]) / 3)
+            vertex_canvas_pos = vertex.canvas_pos
             self.canvas_phantom_settlements[vertex_canvas_pos] = self.create_settlement_icon(vertex_canvas_pos[0],
                                                                                              vertex_canvas_pos[1], '',
                                                                                              state='hidden')
@@ -282,15 +280,14 @@ class GameWindow:
 
         for edge in self.board.get_edges():
             # average of vertex positions
-            vertex_pos_list = [v.get_canvas_pos() for v in self.board.get_vertices_from_edge(edge)]
-            edge.set_canvas_pos(
-                ((vertex_pos_list[0][0] + vertex_pos_list[1][0]) / 2,
-                 (vertex_pos_list[0][1] + vertex_pos_list[1][1]) / 2))
-            edge_canvas_pos = edge.get_canvas_pos()
+            vertex_pos_list = [v.canvas_pos for v in self.board.get_vertices_from_edge(edge)]
+            edge.canvas_pos = ((vertex_pos_list[0][0] + vertex_pos_list[1][0]) / 2,
+                               (vertex_pos_list[0][1] + vertex_pos_list[1][1]) / 2)
+            edge_canvas_pos = edge.canvas_pos
             self.edge_at_canvas_position[str(edge_canvas_pos)] = edge
             slope = (vertex_pos_list[1][1] - vertex_pos_list[0][1]) / (vertex_pos_list[1][0] - vertex_pos_list[0][0])
             rotation_angle = (0 if slope == 0.0 else (60 if slope > 0 else -60))
-            edge.set_rotation_angle(rotation_angle)
+            edge.rotation_angle = rotation_angle
             self.canvas_phantom_roads[edge_canvas_pos] = self.create_road_icon(edge_canvas_pos[0], edge_canvas_pos[1],
                                                                                rotation_angle, '', state='hidden')
 
@@ -390,7 +387,7 @@ class GameWindow:
         self.display.configure(state=DISABLED)
 
     def setup_turn(self, turn_counter: int):
-        if turn_counter == 2 * len(self.game.players) - 1:
+        if turn_counter > 2 * len(self.game.players) - 1:
             self.display_text("Setup phase finished.")
             return
 
@@ -398,15 +395,20 @@ class GameWindow:
             self.game.advance_turn()
             self.setup_turn(turn_counter + 1)
 
+        self.display_text(f"It is Player {self.game.current_turn}'s turn")
+
         if self.game.current_turn == 0:
             self.user_setup_turn(continuation=continuation)
         else:
-            self.display_text(f"Turn {turn_counter}. It is Player {self.game.current_turn}'s turn")
+            self.computer_agent_setup_turn(self.game.current_turn)
             continuation()
 
     def user_setup_turn(self, continuation):
         self.display_text("Please place a settlement.")
         self.user_show_available_setup_settlement_spots(continuation)
+
+    def computer_agent_setup_turn(self, player_id):
+        agent = self.game.get_agent(player_id)
 
     def draw_settlement(self, pos: Tuple[float, float]):
         """
@@ -427,20 +429,20 @@ class GameWindow:
     def draw_city(self, pos: Tuple[float, float]):
         raise NotImplementedError()
 
-    def user_build_settlement(self, pos: Tuple[float, float], is_game_start):
+    def user_build_settlement(self, pos: Tuple[float, float]):
         """
         Build a settlement for the user at the vertex associated with this screen position.
         Then, stop any ongoing settlement animations.
         """
-        self.game.build_settlement(0, self.vertex_at_canvas_position[str(pos)], is_game_start)
+        self.game.build_settlement(0, self.vertex_at_canvas_position[str(pos)])
         self.phantom_settlements_anim = False
         for x in self.canvas_phantom_settlements:
             self.canvas.itemconfigure(self.canvas_phantom_settlements[x], state='hidden')
             self.canvas.tag_unbind(self.canvas_phantom_settlements[x], "<Button-1>")
         self.draw_settlement(pos)
 
-    def user_build_road(self, pos: Tuple[float, float], is_game_start):
-        self.game.build_road(0, self.edge_at_canvas_position[str(pos)], is_game_start)
+    def user_build_road(self, pos: Tuple[float, float]):
+        self.game.build_road(0, self.edge_at_canvas_position[str(pos)])
         self.phantom_roads_anim = False
         for x in self.canvas_phantom_roads:
             self.canvas.itemconfigure(self.canvas_phantom_roads[x], state='hidden')
@@ -448,25 +450,25 @@ class GameWindow:
         self.draw_road(pos)
 
     def user_build_setup_settlement(self, pos: Tuple[float, float], continuation):
-        self.user_build_settlement(pos, True)
+        self.user_build_settlement(pos)
         self.display_text("Please place a road.")
-        self.user_show_available_road_spots(continuation, True)
+        self.user_show_available_road_spots(continuation)
 
     def user_show_available_setup_settlement_spots(self, continuation):
         # icons should place a settlement when clicked
-        for vertex_obj in self.game.get_available_settlement_spots(0, True):
+        for vertex_obj in self.game.get_available_settlement_spots(0):
             pos = vertex_obj.canvas_pos
             self.canvas.itemconfigure(self.canvas_phantom_settlements[pos], state='normal')
             self.canvas.tag_bind(self.canvas_phantom_settlements[pos], "<Button-1>",
                                  lambda x, pos=pos: self.user_build_setup_settlement(pos, continuation))
         self.user_toggle_available_settlement_spots(True)
 
-    def user_show_available_road_spots(self, continuation, is_game_start):
+    def user_show_available_road_spots(self, continuation):
         available_road_spots = self.game.get_available_road_spots(self.game.players[self.game.current_turn].id)
-        positions = [e.get_canvas_pos() for e in available_road_spots]
-        for pos in [e.get_canvas_pos() for e in available_road_spots]:
+        positions = [e.canvas_pos for e in available_road_spots]
+        for pos in [e.canvas_pos for e in available_road_spots]:
             def on_build_setup_road(x, pos=pos):
-                self.user_build_road(pos, is_game_start)
+                self.user_build_road(pos)
                 continuation()
 
             self.canvas.itemconfigure(self.canvas_phantom_roads[pos], state='normal')

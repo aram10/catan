@@ -23,15 +23,15 @@ class TestTileAndEdgeNeighbors(unittest.TestCase):
                 self.assertTrue(all([len(edge_set.intersection(b.get_edges_from_tile(n))) == 1 for n in tile_set]))
             except AssertionError:
                 flag = False
-                coords = str(tile.get_coords())
+                coords = str(tile.coords)
                 print(f"Inconsistency with tile {coords}.")
                 print("="*50)
-                print(f"Tile {coords} has neighbors {str([t.get_coords() for t in list(tile_set)])} and edges {str([e.get_coords() for e in edge_set])}.")
+                print(f"Tile {coords} has neighbors {str([t.coords for t in list(tile_set)])} and edges {str([e.coords for e in edge_set])}.")
                 for neighbor in tile_set:
-                    neighbor_coords = str(neighbor.get_coords())
+                    neighbor_coords = str(neighbor.coords)
                     neighbor_edges = b.get_edges_from_tile(neighbor)
-                    print(f"Tile {neighbor_coords}'s edges are: {str([e.get_coords() for e in neighbor_edges])}.")
-                    print(f"Tile {coords} shares edges {str([e.get_coords() for e in edge_set.intersection(neighbor_edges)])} with tile {neighbor_coords}.")
+                    print(f"Tile {neighbor_coords}'s edges are: {str([e.coords for e in neighbor_edges])}.")
+                    print(f"Tile {coords} shares edges {str([e.coords for e in edge_set.intersection(neighbor_edges)])} with tile {neighbor_coords}.")
                 print("="*50)
                 print('\n')
         self.assertTrue(flag)
@@ -41,7 +41,7 @@ class TestTileAndEdgeNeighbors(unittest.TestCase):
         flag = True
         tiles = b.get_tiles()
         for tile in tiles:
-            vertex_set = tile.get_vertices()
+            vertex_set = tile.vertices
             neighbor_tile_set = set.intersection(*[b.get_tiles_from_vertex(v) for v in vertex_set])
             try:
                 if not (len(neighbor_tile_set) == 1 and list(neighbor_tile_set)[0] == tile):
@@ -49,13 +49,13 @@ class TestTileAndEdgeNeighbors(unittest.TestCase):
                     self.assertTrue(len(neighbor_tile_set) == 2 and len(b.get_neighboring_tiles(tile)) == 3 and tile in neighbor_tile_set)
             except AssertionError:
                 flag = False
-                coords = str(tile.get_coords())
+                coords = str(tile.coords)
                 neighboring_tiles = b.get_neighboring_tiles(tile)
                 print(f"Inconsistency with tile {coords}.")
                 print("="*50)
-                print(f"Tile {coords} has neighbors {str([t.get_coords() for t in list(neighboring_tiles)])} and vertices {str([v.vertex_id for v in vertex_set])}.")
+                print(f"Tile {coords} has neighbors {str([t.coords for t in list(neighboring_tiles)])} and vertices {str([v.vertex_id for v in vertex_set])}.")
                 for neighbor in neighboring_tiles:
-                    neighbor_coords = str(neighbor.get_coords())
+                    neighbor_coords = str(neighbor.coords)
                     neighbor_vertices = b.get_vertices_from_tile(neighbor)
                     print(f"Tile {neighbor_coords}'s vertices are: {str([v.vertex_id for v in neighbor_vertices])}.")
                     print(f"Tile {coords} shares vertices {str([v.vertex_id for v in vertex_set.intersection(neighbor_vertices)])} with tile {neighbor_coords}.")

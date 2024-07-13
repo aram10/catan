@@ -1,8 +1,4 @@
-from enum import Enum
 from typing import Tuple, Set
-
-from constants import RESOURCE
-from edge import Edge
 
 
 class Tile:
@@ -28,54 +24,12 @@ class Tile:
         return hash((self.q, self.r, self.resource))
 
     def __eq__(self, other):
-        return isinstance(other, Tile) and self.q == other.q and self.r == other.r
+        return isinstance(other, Tile) and self.coords == other.coords
 
-    def set_coords(self, q: int, r: int):
-        self.q = q
-        self.r = r
-        return self
-
-    def get_coords(self) -> Tuple[int, int]:
+    @property
+    def coords(self) -> Tuple[int, int]:
         return self.q, self.r
 
-    def get_q(self) -> int:
-        return self.q
-
-    def get_r(self) -> int:
-        return self.r
-
-    def get_dice_num(self) -> int:
-        return self.dice_num
-
-    def set_dice_num(self, dice_num: int):
-        self.dice_num = dice_num
-
-    def get_vertices(self) -> Set['Vertex']:
-        return self.vertices
-
-    def set_vertices(self, vertices: Set['Vertex']):
-        """
-        Invoked through board.py for initialization purposes.
-        """
-        self.vertices = vertices
-
-    def get_resource(self) -> RESOURCE:
-        return self.resource
-
-    def set_resource(self, resource: RESOURCE):
-        self.resource = resource
-
-    def place_robber(self):
-        self.robber = True
-
-    def remove_robber(self):
-        self.robber = False
-
-    def has_robber(self) -> bool:
-        return self.robber
-
-    def get_canvas_pos(self) -> Tuple[int, int]:
-        return self.canvas_pos
-
-    def set_canvas_pos(self, pos: Tuple[int, int]):
-        self.canvas_pos = pos
+    @coords.setter
+    def coords(self, value):
+        self.q, self.r = value
