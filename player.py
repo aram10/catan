@@ -1,13 +1,15 @@
 import random
 import uuid
-from typing import List, Optional
+from collections import defaultdict
+from typing import List, Optional, Dict, Set
 from abc import ABC, abstractmethod
 
 import numpy as np
 
-from constants import RESOURCE, PLAYERCOLOR
+from constants import RESOURCE, PLAYERCOLOR, MAX_TRADE_PROPOSALS
 from edge import Edge
 from game_window import GameWindow
+from port import Port
 from tile import Tile
 from vertex import Vertex
 
@@ -25,8 +27,10 @@ class Player:
         self.available_settlements = available_settlements
         self.available_roads = available_roads
         self.available_cities = available_cities
-        # resources (BRICK, GRAIN, LUMBER, ORE, WOOD)
-        self.resources = [0, 0, 0, 0, 0]
+        # resources [BRICK, GRAIN, LUMBER, ORE, WOOL]
+        self.resources = [0] * 5
+        # development cards [Knight, Monopoly, RoadBuilding, VictoryPoint, YearOfPlenty]
+        self.dev_cards = [0] * 6
         self.victory_points = 0
         self.settlements = 0
         self.roads = 0
@@ -36,9 +40,26 @@ class Player:
         self.has_longest_road = False
         self.first_settlement = None
         self.second_settlement = None
+        self.available_exchange_resources: Dict[RESOURCE, bool] = {
+            RESOURCE.BRICK: False,
+            RESOURCE.GRAIN: False,
+            RESOURCE.LUMBER: False,
+            RESOURCE.ORE: False,
+            RESOURCE.WOOL: False,
+            RESOURCE.ANY: False
+        }
+        # computer agents do discards sequentially, so need to know when to stop discarding
+        self.start_of_turn_hand_count = 0
+        self.start_of_turn_dev_card_count = 0
 
     def resource_count(self, r: RESOURCE):
         return self.resources[r.value]
+
+    def total_resource_count(self):
+        return sum(self.resources)
+
+    def total_dev_card_count(self):
+        return sum(self.dev_cards)
 
     def get_random_available_resource(self) -> Optional[RESOURCE]:
         """
@@ -47,6 +68,25 @@ class Player:
         if sum(self.resources) == 0:
             return None
         return random.choice([RESOURCE(i) for i in range(5) if self.resources[i] > 0])
+
+    def available_exchanges(self) -> List[bool]:
+        # [brick, grain, lumber, ore, wool]
+        res = [False] * 5
+        res[0] = self.resources[RESOURCE.BRICK] >= 4 \
+                 or (self.resources[RESOURCE.BRICK] >= 3 and self.available_exchange_resources[RESOURCE.ANY]) \
+                 or (self.available_exchange_resources[RESOURCE.BRICK] and self.resources[RESOURCE.BRICK] >= 2)
+        res[1] = self.resources[RESOURCE.GRAIN] >= 4 \
+                 or (self.resources[RESOURCE.GRAIN] >= 3 and self.available_exchange_resources[RESOURCE.ANY]) \
+                 or (self.available_exchange_resources[RESOURCE.GRAIN] and self.resources[RESOURCE.GRAIN] >= 2)
+        res[2] = self.resources[RESOURCE.LUMBER] >= 4 \
+                 or (self.resources[RESOURCE.LUMBER] >= 3 and self.available_exchange_resources[RESOURCE.ANY]) \
+                 or (self.available_exchange_resources[RESOURCE.LUMBER] and self.resources[RESOURCE.LUMBER] >= 2)
+        res[3] = self.resources[RESOURCE.ORE] >= 4 \
+                 or (self.resources[RESOURCE.ORE] >= 3 and self.available_exchange_resources[RESOURCE.ANY]) \
+                 or (self.available_exchange_resources[RESOURCE.ORE] and self.resources[RESOURCE.ORE] >= 2)
+        res[4] = self.resources[RESOURCE.WOOL] >= 4 \
+                 or (self.resources[RESOURCE.WOOL] >= 3 and self.available_exchange_resources[RESOURCE.ANY]) \
+                 or (self.available_exchange_resources[RESOURCE.WOOL] and self.resources[RESOURCE.WOOl] >= 2)
 
     def can_build_settlement(self) -> bool:
         """
@@ -69,6 +109,10 @@ class Player:
         return self.resources[RESOURCE.BRICK] >= 1 and self.resources[
             RESOURCE.LUMBER] >= 1 and self.roads < self.available_roads
 
+    def can_buy_dev_card(self) -> bool:
+        return self.resources[RESOURCE.GRAIN] >= 1 and self.resources[RESOURCE.WOOL] >= 1 and self.resources[
+            RESOURCE.ORE] >= 1
+
     def build_road(self, edge: Edge):
         edge.player_road_id = self.id
         self.roads += 1
@@ -88,6 +132,8 @@ class Player:
         self.resources[RESOURCE.LUMBER] -= 1
         self.resources[RESOURCE.GRAIN] -= 1
         self.resources[RESOURCE.WOOL] -= 1
+        if isinstance(vertex, Port):
+            self.available_exchange_resources[vertex.resource] = True
 
     def place_settlement(self, vertex: Vertex):
         vertex.player_id = self.id
@@ -153,64 +199,72 @@ class Mask:
 
     def action_type_mask(self) -> np.array:
         """
-        Possible actions:
-            -Buy Development Card
-                > it is player's turn
-                > player has at least 1 grain, 1 wool, and 1 ore
-                > player does not have to roll dice, discard, move robber, or steal
-            -Discard Resource
-                > player has a non-empty hand
-                > a 7 was rolled on this turn
-                > player's hand count at the start of this turn, x, is >= 8
-                > player's current resource count is greater than ceil(x/2)
-            -End Turn
-                > it is player's turn
-                > player does not have to roll dice, discard, move robber, or steal
-            -Exchange Resource
-                > it is player's turn
-                > player has at least 1 type of resource that can be exchanged with the bank or at a port
-                > player does not have to roll dice, discard, move robber, or steal
-            -Move Robber
-                > it is player's turn
-                > a 7 was rolled on this turn
-                > player does not have to roll dice or discard
-            -Place Road
-                > it is player's turn
-                > player has at least 1 lumber and 1 brick
-                > the set of available road spots is nonempty
-                > player does not have to roll dice, discard, move robber, or steal
-            -Place Settlement
-                > it is player's turn
-                > player has at least 1 lumber, 1 brick, 1 grain, and 1 wool
-                > the set of available settlement spots is nonempty
-                > the player has less than 5 settlements on the board
-                > player does not have to roll dice, discard, move robber, or steal
-            -Play Development Card
-                > it is player's turn
-                > player has bought x dev cards this turn and has > x dev cards
-                > player does not have to roll dice, discard, move robber, or steal
-            -Propose Trade
-                > it is player's turn
-                > player's resource count is nonzero
-                > there have been < MAX_TRADE_PROPOSALS trades proposed this turn
-                > player does not have to roll dice, discard, move robber, or steal
-            -Respond To Trade
-                > it is NOT player's turn
-                > a trade was proposed to this player
-            -Roll Dice
-                > it is player's turn
-                > the dice have not been rolled yet this turn
-            -Steal Resource
-                > it is player's turn
-                > the robber was moved this turn
-                > player has yet to steal this turn
-            -Upgrade to City
-                > it is player's turn
-                > player has at least 1 settlement
-                > player has at least 2 grain and 3 ore
+        Returns a mask where the ith position is true if the agent is capable of taking the associated actions. They are:
+            -(1) Buy Development Card
+            -(2) Discard Resource
+            -(3) End Turn
+            -(4) Exchange Resource
+            -(5) Move Robber
+            -(6) Place Road
+            -(7) Place Settlement
+            -(8) Play Development Card
+            -(9) Propose Trade
+            -(10) Respond To Trade
+            -(11) Roll Dice
+            -(12) Steal Resource
+            -(13) Upgrade to City
         """
         mask = np.zeros(13)
-        pass
+
+        # has_to_discard
+        mask[1] = self.game.seven_rolled_this_turn \
+                  and (y := self.player.start_of_turn_hand_count) > 7 \
+                  and self.player.total_resource_count() > y - y // 2
+
+        if self.game.current_turn_idx == self.player.id:
+            # roll dice
+            mask[10] = not self.game.dice_rolled_this_turn
+
+            # move robber
+            mask[4] = self.game.seven_rolled_this_turn \
+                      and not self.game.robber_moved_this_turn
+
+            # steal
+            mask[11] = self.game.robber_moved_this_turn \
+                       and not self.game.stole_this_turn
+
+            if not mask[10] and not mask[5] and not mask[11]:
+                # end turn
+                mask[2] = True
+
+                # buy dev card
+                mask[0] = self.player.can_buy_dev_card()
+
+                # exchange resource
+                mask[3] = len(self.game.get_available_road_spots(self.player.id)) > 0
+
+                # build road
+                mask[5] = self.player.can_build_road() \
+                          and len(self.game.get_available_road_spots(self.player.id)) > 0
+
+                # build settlement
+                mask[6] = self.player.can_build_settlement() \
+                          and len(self.game.get_available_settlement_spots(self.player.id)) > 0
+
+                # play dev card
+                mask[7] = self.player.total_dev_card_count() > self.player.start_of_turn_dev_card_count
+
+                # propose trade
+                mask[8] = self.game.trades_proposed_this_turn < MAX_TRADE_PROPOSALS
+
+                # upgrade to city
+                mask[12] = self.player.can_build_settlement()
+        else:
+            # respond to trade
+            mask[9] = self.game.current_trade_on_table is not None \
+                      and self.game.current_trade_on_table[1] == self.player.id
+
+        return mask
 
     def city_mask(self):
         """

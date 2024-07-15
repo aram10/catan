@@ -29,23 +29,17 @@ class Game:
             # TODO: change this when moving beyond just random agents
             self.agents[player.id] = RandomAgent(player, self)
         self.num_players = len(self.players)
-        # the user of the GUI is always player 0
 
         self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
         self.player_buildings = defaultdict(set)
         self.player_roads = defaultdict(set)
 
         # turn logic
+        # the user of the GUI is always player 0
         self.current_turn_idx = 0
         self.turn_order = list(range(self.num_players))
         random.shuffle(self.turn_order)
-        self.current_setup_turn_idx = 0
-        self.setup_turn_order = self.turn_order + self.turn_order[::-1]
-        self.is_game_start = True
-
-        # turn logic
         self.dice_rolled_this_turn = False
-        self.discarded_this_turn = False
         self.robber_moved_this_turn = False
         self.stole_this_turn = False
         self.seven_rolled_this_turn = False
@@ -53,6 +47,11 @@ class Game:
         self.trades_proposed_this_turn = 0
         # (from, to)
         self.current_trade_on_table: Optional[Tuple[int, int]] = None
+
+        # setup turn logic (only for beginning phase)
+        self.current_setup_turn_idx = 0
+        self.setup_turn_order = self.turn_order + self.turn_order[::-1]
+        self.is_game_start = True
 
     @property
     def current_turn(self):
