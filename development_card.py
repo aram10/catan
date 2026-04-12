@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from constants import DEVELOPMENT
+from constants import Development
 from game import Game
 
 
@@ -8,7 +8,7 @@ class DevelopmentCard(ABC):
 
     @staticmethod
     @abstractmethod
-    def dev_type() -> DEVELOPMENT:
+    def dev_type() -> Development:
         ...
 
     @staticmethod
@@ -20,8 +20,8 @@ class DevelopmentCard(ABC):
 class Knight(DevelopmentCard):
 
     @staticmethod
-    def dev_type() -> DEVELOPMENT:
-        return DEVELOPMENT.KNIGHT
+    def dev_type() -> Development:
+        return Development.KNIGHT
 
     @staticmethod
     def apply_action(game: Game, player_id: int):
@@ -38,8 +38,8 @@ class Knight(DevelopmentCard):
 class Monopoly(DevelopmentCard):
 
     @staticmethod
-    def dev_type() -> DEVELOPMENT:
-        return DEVELOPMENT.MONOPOLY
+    def dev_type() -> Development:
+        return Development.MONOPOLY
 
     @staticmethod
     def apply_action(game: Game, player_id: int):
@@ -54,8 +54,8 @@ class Monopoly(DevelopmentCard):
 class RoadBuilding(DevelopmentCard):
 
     @staticmethod
-    def dev_type() -> DEVELOPMENT:
-        return DEVELOPMENT.ROAD_BUILDING
+    def dev_type() -> Development:
+        return Development.ROAD_BUILDING
 
     @staticmethod
     def apply_action(game: Game, player_id: int):
@@ -71,8 +71,8 @@ class RoadBuilding(DevelopmentCard):
 class VictoryPoint(DevelopmentCard):
 
     @staticmethod
-    def dev_type() -> DEVELOPMENT:
-        return DEVELOPMENT.VICTORY_POINT
+    def dev_type() -> Development:
+        return Development.VICTORY_POINT
 
     @staticmethod
     def apply_action(game: Game, player_id: int):
@@ -83,8 +83,8 @@ class VictoryPoint(DevelopmentCard):
 class YearOfPlenty(DevelopmentCard):
 
     @staticmethod
-    def dev_type() -> DEVELOPMENT:
-        return DEVELOPMENT.YEAR_OF_PLENTY
+    def dev_type() -> Development:
+        return Development.YEAR_OF_PLENTY
 
     @staticmethod
     def apply_action(game: Game, player_id: int):

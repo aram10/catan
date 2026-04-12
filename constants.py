@@ -1,7 +1,7 @@
 from enum import IntEnum
 
 
-class RESOURCE(IntEnum):
+class Resource(IntEnum):
     BRICK = 0
     GRAIN = 1
     LUMBER = 2
@@ -12,7 +12,7 @@ class RESOURCE(IntEnum):
     ANY = 7
 
 
-class DIRECTION(IntEnum):
+class Direction(IntEnum):
     NORTH = 0
     NORTHWEST = 1
     WEST = 2
@@ -23,7 +23,7 @@ class DIRECTION(IntEnum):
     NORTHEAST = 7
 
 
-class PLAYERCOLOR(IntEnum):
+class PlayerColor(IntEnum):
     RED = 0
     BLUE = 1
     WHITE = 2
@@ -32,7 +32,7 @@ class PLAYERCOLOR(IntEnum):
     BROWN = 5
 
 
-class DEVELOPMENT(IntEnum):
+class Development(IntEnum):
     KNIGHT = 0
     ROAD_BUILDING = 1
     YEAR_OF_PLENTY = 2
@@ -40,7 +40,7 @@ class DEVELOPMENT(IntEnum):
     VICTORY_POINT = 4
 
 
-class GAMEPHASE(IntEnum):
+class GamePhase(IntEnum):
     SETUP = 0
     NORMAL = 1
 

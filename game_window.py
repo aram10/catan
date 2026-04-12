@@ -9,7 +9,7 @@ from statistics import mean
 
 from PIL import Image, ImageTk
 
-from constants import PLAYERCOLOR, RESOURCE
+from constants import PlayerColor, Resource
 from port import Port
 from vertex import Vertex
 
@@ -237,12 +237,12 @@ class GameWindow:
             clone, p = hexagon(tortoise, SIDE, color, self.board.get_tile(tile.coords[0], tile.coords[1]).dice_num)
             tile_positions[tile.coords] = p
             tile.canvas_pos = p
-            if tile.resource == RESOURCE.WATER:
+            if tile.resource == Resource.WATER:
                 ports = [v for v in tile.vertices if isinstance(v, Port)]
                 c = Counter([v.resource for v in ports])
                 pr = max(c, key=c.get)
                 ports_of_resource_in_question = [v for v in ports if v.resource == pr]
-                if tile.resource == RESOURCE.WATER and c[pr] >= 2:
+                if tile.resource == Resource.WATER and c[pr] >= 2:
                     # could be 3 ports of same resource, but port tile only "owns" two of them
                     if c[pr] == 2 and self.board.vertices_are_adjacent(ports_of_resource_in_question[0],
                                                                        ports_of_resource_in_question[1]):

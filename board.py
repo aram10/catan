@@ -16,7 +16,7 @@ from port import Port
 if TYPE_CHECKING:
     import player
 
-from constants import RESOURCE
+from constants import Resource
 from edge import Edge
 from tile import Tile
 from vertex import Vertex
@@ -31,13 +31,13 @@ def generate_resources_and_chits(num_tiles: int) -> TileData:
     """
     chits = ([2] + (list(range(3, 7)) + list(range(8, 12))) * 2 + [12]) * ((num_tiles // 19) + 1)
     shuffle(chits)
-    base_resources = [RESOURCE.BRICK, RESOURCE.GRAIN, RESOURCE.LUMBER, RESOURCE.ORE, RESOURCE.WOOL]
+    base_resources = [Resource.BRICK, Resource.GRAIN, Resource.LUMBER, Resource.ORE, Resource.WOOL]
     resources = base_resources * ((num_tiles // len(base_resources)) + 1)
     shuffle(resources)
     desert_tiles = set(sample(list(range(num_tiles)), max((num_tiles // 10), 1)))
     tile_data = []
     for idx in range(num_tiles):
-        tile_data.append((resources.pop(), chits.pop()) if idx not in desert_tiles else (RESOURCE.DESERT, -1))
+        tile_data.append((resources.pop(), chits.pop()) if idx not in desert_tiles else (Resource.DESERT, -1))
     return tile_data
 
 
@@ -120,10 +120,10 @@ class Board:
             # if tile is on outer edge (i.e., water tile), don't give it resource/chit
             if coord[0] == 0 or coord[0] == 2 * board_size or coord[1] == 0 or coord[1] == 2 * board_size or coord[0] + \
                     coord[1] == board_size or coord[0] + coord[1] == 3 * board_size:
-                tile.resource = RESOURCE.WATER
+                tile.resource = Resource.WATER
             else:
                 resource, chit_val = tile_data.pop()
-                if resource != RESOURCE.DESERT:
+                if resource != Resource.DESERT:
                     # enforce rule that there are no 8-8, 6-6, or 8-6 connections
                     neighbor_rolls = {x.dice_num for x in self.get_neighboring_tiles(tile)}
                     if 6 in neighbor_rolls or 8 in neighbor_rolls:
@@ -145,7 +145,25 @@ class Board:
             tile.vertices = {self.vertex_objects[v] for v in vertices}
         # Note that edges have their own coordinate system while vertices are defined by their incident tiles
         self.edges = [[Edge(i, j) for j in range(2 * num_tiles + 2)] for i in range(2 * num_tiles + 2)]
-        c = Counter([v.resource for v in self.vertex_objects.values() if isinstance(v, Port)])
+        # Need to give the tiles, vertices, and edges a canonical ordering
+        self.ordered_tiles = [self.get_tile(q, r) for (q, r, _) in sorted(list(self.tile_coords))]
+        self.ordered_vertices = [self.vertex_objects[coord] for coord in
+                                 sorted(self.vertex_objects, key=lambda coords: min(coords))]
+        self.ordered_edges = sorted(self.get_edges(), key=lambda e: e.coords)
+        self.edge_index_map = {edge.coords: idx for (idx, edge) in enumerate(self.ordered_edges)}
+        self.vertex_index_map = {vertex.vertex_id: idx for (idx, vertex) in enumerate(self.ordered_vertices)}
+
+    @property
+    def num_edges(self):
+        return len(self.ordered_edges)
+
+    @property
+    def num_tiles(self):
+        return len(self.ordered_tiles)
+
+    @property
+    def num_vertices(self):
+        return len(self.ordered_vertices)
 
     def __link_tile_and_vertices(self, tile: Tile) -> Set[Vertex]:
         """
@@ -158,16 +176,16 @@ class Board:
         attrs = {}
         vertices = set()
         neighbors = self.get_neighboring_tiles(tile)
-        tile_shore = (tile.resource == RESOURCE.WATER)
+        tile_shore = (tile.resource == Resource.WATER)
         for n1 in neighbors:
-            n1_shore = (n1.resource == RESOURCE.WATER)
+            n1_shore = (n1.resource == Resource.WATER)
             n1_neighbors = self.get_neighboring_tiles(n1)
             n2_neighbors = list(neighbors.intersection(n1_neighbors))
             assert (len(n2_neighbors) == 2 or len(n2_neighbors) == 1)
             # neighboring tiles share 2 common neighbors (if neither are corner water tiles)
             # defines two vertices connected by an edge - add this connection to the graph
             t1 = n2_neighbors[0]
-            t1_shore = (t1.resource == RESOURCE.WATER)
+            t1_shore = (t1.resource == Resource.WATER)
             v1 = frozenset({tile.coords, n1.coords, t1.coords})
             vertices.add(v1)
             if v1 not in self.vertex_graph:
@@ -179,7 +197,7 @@ class Board:
             self.tile_graph.add_edge(tile, v1)
             if len(n2_neighbors) == 2:
                 t2 = n2_neighbors[1]
-                t2_shore = (t2.resource == RESOURCE.WATER)
+                t2_shore = (t2.resource == Resource.WATER)
                 v2 = frozenset({tile.coords, n1.coords, t2.coords})
                 vertices.add(v2)
                 if v2 not in self.vertex_graph:
@@ -205,8 +223,8 @@ class Board:
         shore_vertices = [x for x, y in self.vertex_graph.nodes(data=True) if y['on_shore']]
         visited = {x: False for x in shore_vertices}
         num_ports = 3 * self.board_size
-        port_resources = [RESOURCE.GRAIN, RESOURCE.ORE, RESOURCE.WOOL, RESOURCE.LUMBER, RESOURCE.BRICK,
-                          RESOURCE.ANY] * (math.ceil(num_ports / 6) + 1)
+        port_resources = [Resource.GRAIN, Resource.ORE, Resource.WOOL, Resource.LUMBER, Resource.BRICK,
+                          Resource.ANY] * (math.ceil(num_ports / 6) + 1)
         shuffle(port_resources)
         # begin initializing the first port
         curr_resource = port_resources.pop()
@@ -324,6 +342,9 @@ class Board:
     def get_vertices(self) -> Iterable[Vertex]:
         return iter(self.vertex_objects[x] for x in self.vertex_objects.keys())
 
+    def get_num_vertices(self) -> int:
+        return len(self.vertex_objects)
+
     def get_neighboring_tiles(self, tile: Tile) -> Set[Tile]:
         res = set()
         q, r = tile.coords
@@ -381,7 +402,7 @@ class Board:
     def get_desert_tiles(self) -> Set[Tile]:
         tiles = set()
         for tile in self.get_tiles():
-            if tile.resource == RESOURCE.DESERT:
+            if tile.resource == Resource.DESERT:
                 tiles.add(tile)
         return tiles
 
@@ -408,3 +429,15 @@ class Board:
     def get_vertices_from_edge(self, edge: Edge) -> Tuple[Vertex, Vertex]:
         v1, v2 = self.get_graph_edge_from_edge(edge)
         return self.vertex_objects[v1], self.vertex_objects[v2]
+
+    def get_index_of_edge(self, edge: Edge) -> int:
+        """
+        Position of the edge in the ordered edges list.
+        """
+        return self.edge_index_map[edge.coords]
+
+    def get_index_of_vertex(self, vertex: Vertex) -> int:
+        """
+        Position of the vertex in the ordered vertices list.
+        """
+        return self.vertex_index_map[vertex.vertex_id]

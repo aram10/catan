@@ -1,14 +1,14 @@
 from collections import defaultdict
 import random
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Set
 
 from networkx import Graph
 
 from board import Board
-from constants import PLAYERCOLOR
+from constants import PlayerColor, Development, Resource
 from edge import Edge
 from game_window import GameWindow
-from player import Player, RandomAgent, Agent
+from player import Player, Agent
 from tile import Tile
 from vertex import Vertex
 from exceptions import FailedBuildError
@@ -17,22 +17,26 @@ from exceptions import FailedBuildError
 class Game:
 
     def __init__(self, six_players=False):
-        self.players = [Player(i, PLAYERCOLOR(i)) for i in range(4)]
+        self.players = [Player(i, PlayerColor(i)) for i in range(4)]
         if six_players:
             self.board = Board(4)
             for i in range(4, 6):
-                self.players.append(Player(i, PLAYERCOLOR(i)))
+                self.players.append(Player(i, PlayerColor(i)))
         else:
             self.board = Board(3)
         self.agents = {}
         for player in self.players[1:]:
-            # TODO: change this when moving beyond just random agents
-            self.agents[player.id] = RandomAgent(player, self)
+            self.agents[player.id] = Agent(player, self)
         self.num_players = len(self.players)
 
         self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
         self.player_buildings = defaultdict(set)
         self.player_roads = defaultdict(set)
+        self.resource_cards = [19] * 5
+        self.development_cards = [Development.KNIGHT] * 14 + [Development.ROAD_BUILDING] * 2 + [
+            Development.YEAR_OF_PLENTY] * 2 + [Development.MONOPOLY] * 2 + [Development.VICTORY_POINT] * 5
+        random.shuffle(self.development_cards)
+        self.dev_card_idx = 0
 
         # turn logic
         # the user of the GUI is always player 0
@@ -43,7 +47,8 @@ class Game:
         self.robber_moved_this_turn = False
         self.stole_this_turn = False
         self.seven_rolled_this_turn = False
-        self.num_dev_cards_bought_this_turn = 0
+        self.dev_card_played_this_turn = False
+        self.num_dev_cards_bought_this_turn = [0] * 5
         self.trades_proposed_this_turn = 0
         # (from, to)
         self.current_trade_on_table: Optional[Tuple[int, int]] = None
@@ -57,6 +62,17 @@ class Game:
     def current_turn(self):
         return self.turn_order[self.current_turn_idx] if not self.is_game_start else self.setup_turn_order[
             self.current_setup_turn_idx]
+
+    @property
+    def remaining_dev_cards(self):
+        return 25 - self.dev_card_idx
+
+    def remaining_resource(self, resource: Resource):
+        return self.resource_cards[resource]
+
+    def dispense_resource(self, resource: Resource, amt: int):
+        assert amt <= self.resource_cards[resource], f"Withdrawing too much {resource}"
+        self.resource_cards[resource] -= amt
 
     def roll(self, player: Player):
         """
@@ -75,17 +91,44 @@ class Game:
             player.give_resource(player2_resource, 1)
         else:
             producing_tiles = self.board.get_tiles_with_chit(roll)
-            for tile in producing_tiles:
-                for vertex in tile.vertices:
-                    if vertex.player_id == -1:
-                        continue
-                    player = self.players[vertex.player_id]
-                    if vertex.is_city:
-                        player.give_resource(tile.resource, 2)
-                    else:
-                        player.give_resource(tile.resource, 1)
+            self.pay_out_resources(producing_tiles)
 
         # TODO: Need to allow player to actually take turn
+
+    def pay_out_resources(self, producing_tiles: List[Tile]):
+        """
+        This method causes every tile not occupied by the robber to produce resources for the players with properties on
+        its vertices. The bank may not have enough of a particular resource to pay out what is owed. Suppose there is
+        not enough of resource R to pay out all players. If only 1 player is due to collect resource R this turn, that
+        player receives the remainder of resource R in the bank. Otherwise, nobody receives any of resource R.
+        """
+        resource_count = [0]*5
+        resource_payout = [[0]*5 for _ in range(self.num_players)]
+        player_receiving_resource = [False]*5
+        for tile in producing_tiles:
+            if tile.robber:
+                continue
+            for vertex in tile.vertices:
+                if vertex.player_id == -1:
+                    continue
+                player_receiving_resource[vertex.player_id] = True
+                payout = 2 if vertex.is_city else 1
+                resource_payout[vertex.player_id][tile.resource] += payout
+                resource_count[tile.resource] += payout
+        for resource in [Resource.BRICK, Resource.GRAIN, Resource.LUMBER, Resource.ORE, Resource.WOOL]:
+            if resource_count[resource] > (remaining := self.remaining_resource(resource)):
+                if sum(player_receiving_resource) == 1:
+                    # the one player gets whatever amount of the resource is left
+                    resource_payout[player_receiving_resource.index(True)][resource] = remaining
+                else:
+                    # nobody gets any of the resource
+                    for player_id in range(self.players):
+                        resource_payout[player_id][resource] = 0
+        # actually pay out resources to players
+        for player_id in range(self.players):
+            for resource in [Resource.BRICK, Resource.GRAIN, Resource.LUMBER, Resource.ORE, Resource.WOOL]:
+                self.dispense_resource(resource, resource_payout[player_id][resource])
+                self.get_player(player_id).give_resource(resource, resource_payout[player_id][resource])
 
     def build_settlement(self, player_id: int, vertex: Vertex):
         """
@@ -100,6 +143,15 @@ class Game:
         if self.is_game_start:
             player.place_settlement(vertex)
             self.player_buildings[player_id].add(vertex)
+            if player.first_settlement_played:
+                # the player's second settlement in the setup phase should award resources
+                # get tiles from vertex
+                # for each tile, pay out the tile's resource to the player
+
+                pass
+            else:
+                player.first_settlement_played = True
+
         elif not player.can_build_settlement():
             raise FailedBuildError(f"Player {str(player_id)} cannot build a settlement.")
         else:
@@ -140,7 +192,7 @@ class Game:
             raise FailedBuildError("A city already exists at this spot.")
         player.build_city(vertex)
 
-    def get_players_on_tile(self, tile: Tile) -> List[Player]:
+    def get_players_on_tile(self, tile: Tile) -> Set[Player]:
         """
         Get all players that have a building on this tile.
         :param tile: Tiles to check
