@@ -1,14 +1,16 @@
-from collections import defaultdict
+from collections import defaultdict, Counter
+import itertools
 import random
 
 from networkx import Graph
 
 from actions import Action, ActionType
 from board import Board
-from constants import PlayerColor, Development, Resource, MAX_TRADE_PROPOSALS
+from constants import PlayerColor, Development, Resource, MAX_TRADE_PROPOSALS, VICTORY_POINTS_TO_WIN
 from edge import Edge
 from player import Player, Agent, RandomAgent
 from tile import Tile
+from trade import TradeProposal
 from vertex import Vertex
 from exceptions import FailedBuildError, IllegalActionError
 
@@ -50,9 +52,21 @@ class Game:
         self.seven_rolled_this_turn = False
         self.dev_card_played_this_turn = False
         self.num_dev_cards_bought_this_turn = [0] * 5
+        # robber movement may be triggered by rolling a 7 or by playing a knight
+        self.awaiting_robber_move = False
+        # free roads granted by a Road Building development card
+        self.free_roads_remaining = 0
+        # player ID currently holding the largest army bonus (-1 if nobody)
+        self.largest_army_player_id = -1
         self.trades_proposed_this_turn = 0
         # (from, to)
         self.current_trade_on_table: tuple[int, int] | None = None
+        # the TradeProposal currently awaiting a response, if any
+        self.pending_trade: TradeProposal | None = None
+
+        # terminal state: set once a player reaches the winning victory point total
+        self.game_over = False
+        self.winner_id: int | None = None
 
         # setup turn logic (only for beginning phase)
         self.current_setup_turn_idx = 0
@@ -142,6 +156,10 @@ class Game:
         player = self.players[player_id]
         if self.is_game_start:
             player.place_road(edge)
+        elif self.free_roads_remaining > 0:
+            # Road Building development card grants free roads (no resource cost)
+            player.place_road(edge)
+            self.free_roads_remaining -= 1
         elif not player.can_build_road():
             raise FailedBuildError(f"Player {player_id} cannot build a road.")
         else:
@@ -268,16 +286,22 @@ class Game:
 
         if self.current_turn != player_id:
             if self.current_trade_on_table and self.current_trade_on_table[1] == player_id:
-                return [Action(ActionType.RESPOND_TO_TRADE, True),
-                        Action(ActionType.RESPOND_TO_TRADE, False)]
+                responses = [Action(ActionType.RESPOND_TO_TRADE, False)]
+                if self.pending_trade is not None and self.pending_trade.is_trade_possible:
+                    responses.append(Action(ActionType.RESPOND_TO_TRADE, True))
+                return responses
+            return []
+
+        # While a proposed trade is awaiting a response, the proposer must wait.
+        if self.current_trade_on_table is not None:
             return []
 
         # Must roll first
         if not self.dice_rolled_this_turn:
             return [Action(ActionType.ROLL_DICE)]
 
-        # Must move robber after rolling 7
-        if self.seven_rolled_this_turn and not self.robber_moved_this_turn:
+        # Must move robber after rolling 7 or playing a knight
+        if (self.seven_rolled_this_turn or self.awaiting_robber_move) and not self.robber_moved_this_turn:
             return [Action(ActionType.MOVE_ROBBER, t) for t in self.board.ordered_tiles
                     if t != self.robber_tile and t.resource != Resource.WATER]
 
@@ -288,6 +312,12 @@ class Game:
                             if p.id != player_id and p.total_resource_count() > 0]
             if steal_actions:
                 return steal_actions
+
+        # Road Building: spend the free roads granted by the dev card before anything else
+        if self.free_roads_remaining > 0:
+            road_spots = self.get_available_road_spots(player_id)
+            if road_spots and player.roads < player.available_roads:
+                return [Action(ActionType.BUILD_ROAD, e) for e in road_spots]
 
         # Normal turn actions
         actions = [Action(ActionType.END_TURN)]
@@ -309,9 +339,7 @@ class Game:
                            if v.player_id == player_id and not v.is_city)
 
         if not self.dev_card_played_this_turn and player.start_of_turn_dev_card_count > 0:
-            actions.extend(Action(ActionType.PLAY_DEV_CARD, Development(i))
-                           for i in range(4)
-                           if player.dev_cards[i] - self.num_dev_cards_bought_this_turn[i] > 0)
+            actions.extend(self._playable_dev_card_actions(player))
 
         for i in range(5):
             if player.resources[i] >= player.resource_exchange_rate[Resource(i)]:
@@ -346,11 +374,15 @@ class Game:
         else:
             legal = self.get_legal_actions(player_id)
 
-        # Validate action is legal (check type and target match)
-        action_legal = any(
-            a.action_type == action.action_type and a.target == action.target
-            for a in legal
-        )
+        # Validate action is legal. PROPOSE_TRADE carries a caller-supplied
+        # TradeProposal target, so it is validated by type only.
+        if action.action_type == ActionType.PROPOSE_TRADE:
+            action_legal = any(a.action_type == ActionType.PROPOSE_TRADE for a in legal)
+        else:
+            action_legal = any(
+                a.action_type == action.action_type and a.target == action.target
+                for a in legal
+            )
         if not action_legal:
             raise IllegalActionError(
                 f"Action {action} is not legal for player {player_id} in current state.")
@@ -383,16 +415,30 @@ class Game:
         elif action.action_type == ActionType.RESPOND_TO_TRADE:
             self._apply_respond_to_trade(player_id, action.target)
         elif action.action_type == ActionType.PROPOSE_TRADE:
-            # TODO: stub — build a TradeProposal and set current_trade_on_table.
-            self.trades_proposed_this_turn += 1
+            self._apply_propose_trade(player_id, action.target)
         else:
             raise NotImplementedError(f"Unhandled action type: {action.action_type}")
+
+        self._check_for_winner(player_id)
+
+    def _check_for_winner(self, player_id: int):
+        """Flag the game as over if the player who just acted has reached the winning total.
+
+        Victory points only ever increase on a player's own turn (building, dev cards,
+        largest army from their own knight), so it is sufficient to check the acting player.
+        """
+        if self.game_over:
+            return
+        if self.get_player(player_id).victory_points >= VICTORY_POINTS_TO_WIN:
+            self.game_over = True
+            self.winner_id = player_id
 
     def _apply_roll(self, player_id: int):
         self.dice_rolled_this_turn = True
         roll_val = self.rng.randrange(1, 7) + self.rng.randrange(1, 7)
         if roll_val == 7:
             self.seven_rolled_this_turn = True
+            self.awaiting_robber_move = True
             for player in self.players:
                 player.start_of_turn_hand_count = player.total_resource_count()
         else:
@@ -412,11 +458,86 @@ class Game:
         if card == Development.VICTORY_POINT:
             player.victory_points += 1
 
-    def _apply_play_dev_card(self, player_id: int, dev_card: Development):
-        # TODO: stub — apply KNIGHT/MONOPOLY/YEAR_OF_PLENTY/ROAD_BUILDING effects.
+    def _playable_dev_card_actions(self, player: Player) -> list[Action]:
+        """Enumerate the legal PLAY_DEV_CARD actions for a player (excludes victory points)."""
+        actions = []
+        owned = [player.dev_cards[i] - self.num_dev_cards_bought_this_turn[i] for i in range(5)]
+        if owned[Development.KNIGHT] > 0:
+            actions.append(Action(ActionType.PLAY_DEV_CARD, Development.KNIGHT))
+        if owned[Development.ROAD_BUILDING] > 0:
+            if self.get_available_road_spots(player.id) and player.roads < player.available_roads:
+                actions.append(Action(ActionType.PLAY_DEV_CARD, Development.ROAD_BUILDING))
+        if owned[Development.YEAR_OF_PLENTY] > 0:
+            for combo in itertools.combinations_with_replacement(range(5), 2):
+                need = Counter(combo)
+                if all(self.remaining_resource(Resource(r)) >= n for r, n in need.items()):
+                    actions.append(Action(ActionType.PLAY_DEV_CARD,
+                                          (Development.YEAR_OF_PLENTY,
+                                           (Resource(combo[0]), Resource(combo[1])))))
+        if owned[Development.MONOPOLY] > 0:
+            actions.extend(Action(ActionType.PLAY_DEV_CARD, (Development.MONOPOLY, Resource(r)))
+                           for r in range(5))
+        return actions
+
+    def _apply_play_dev_card(self, player_id: int, target):
+        """Apply a played development card. ``target`` is a Development enum, or a
+        ``(Development, payload)`` tuple for cards that require a choice."""
         player = self.get_player(player_id)
-        player.dev_cards[dev_card] -= 1
+        if isinstance(target, tuple):
+            card, payload = target
+        else:
+            card, payload = target, None
+        player.dev_cards[card] -= 1
         self.dev_card_played_this_turn = True
+        if card == Development.KNIGHT:
+            self._play_knight(player)
+        elif card == Development.MONOPOLY:
+            self._play_monopoly(player, payload)
+        elif card == Development.YEAR_OF_PLENTY:
+            self._play_year_of_plenty(player, payload)
+        elif card == Development.ROAD_BUILDING:
+            self._play_road_building(player)
+
+    def _play_knight(self, player: Player):
+        player.knights_played += 1
+        self._update_largest_army(player)
+        # A knight forces the robber to be moved (and a steal), like rolling a 7.
+        self.awaiting_robber_move = True
+        self.robber_moved_this_turn = False
+        self.stole_this_turn = False
+
+    def _update_largest_army(self, player: Player):
+        """Award or transfer the largest army bonus (needs >= 3 knights, strictly most)."""
+        if player.knights_played < 3:
+            return
+        if self.largest_army_player_id == -1:
+            player.give_largest_army()
+            self.largest_army_player_id = player.id
+        elif self.largest_army_player_id != player.id:
+            holder = self.get_player(self.largest_army_player_id)
+            if player.knights_played > holder.knights_played:
+                holder.remove_largest_army()
+                player.give_largest_army()
+                self.largest_army_player_id = player.id
+
+    def _play_monopoly(self, player: Player, resource: Resource):
+        total = 0
+        for other in self.players:
+            if other.id == player.id:
+                continue
+            amt = other.resources[resource]
+            if amt > 0:
+                other.take_resource(resource, amt)
+                total += amt
+        player.give_resource(resource, total)
+
+    def _play_year_of_plenty(self, player: Player, resources):
+        for resource in resources:
+            self.dispense_resource(resource, 1)
+            player.give_resource(resource, 1)
+
+    def _play_road_building(self, player: Player):
+        self.free_roads_remaining = max(0, min(2, player.available_roads - player.roads))
 
     def _apply_exchange_resource(self, player_id: int, resource_given: Resource, resource_received: Resource):
         player = self.get_player(player_id)
@@ -452,12 +573,13 @@ class Game:
         self.resource_cards[resource] += 1
 
     def _apply_end_turn(self):
-        # TODO: no terminal/win check — end the game when a player reaches 10 VP.
         self.advance_turn_non_setup()
         self.dice_rolled_this_turn = False
         self.robber_moved_this_turn = False
         self.stole_this_turn = False
         self.seven_rolled_this_turn = False
+        self.awaiting_robber_move = False
+        self.free_roads_remaining = 0
         self.dev_card_played_this_turn = False
         self.num_dev_cards_bought_this_turn = [0] * 5
         self.trades_proposed_this_turn = 0
@@ -467,8 +589,20 @@ class Game:
         next_player.start_of_turn_hand_count = next_player.total_resource_count()
         next_player.start_of_turn_dev_card_count = next_player.total_dev_card_count()
 
+    def _apply_propose_trade(self, player_id: int, proposal: TradeProposal):
+        """Put a proposed player-to-player trade on the table awaiting a response."""
+        if proposal is None:
+            raise IllegalActionError("PROPOSE_TRADE requires a TradeProposal target.")
+        if proposal.proposer.id != player_id:
+            raise IllegalActionError(
+                f"Player {player_id} cannot propose a trade on behalf of player {proposal.proposer.id}.")
+        self.pending_trade = proposal
+        self.current_trade_on_table = (proposal.proposer.id, proposal.target.id)
+        self.trades_proposed_this_turn += 1
+
     def _apply_respond_to_trade(self, player_id: int, accept: bool):
-        # TODO: stub — on accept, execute the pending TradeProposal and move resources.
-        if accept and self.current_trade_on_table is not None:
-            pass
+        """Resolve the pending trade. On acceptance the resources are exchanged."""
+        if accept and self.pending_trade is not None and self.pending_trade.is_trade_possible:
+            self.pending_trade.accept_trade()
+        self.pending_trade = None
         self.current_trade_on_table = None
