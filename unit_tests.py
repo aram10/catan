@@ -10,6 +10,7 @@ from vertex import Vertex
 from edge import Edge
 from exceptions import FailedBuildError, IllegalActionError
 from actions import Action, ActionType
+from trade import TradeProposal
 
 
 class TestTileAndEdgeNeighbors(unittest.TestCase):
@@ -705,6 +706,198 @@ class TestGetConnectedEdges(unittest.TestCase):
             self.assertEqual(connected[0], frozenset({v1, v2}))
             return
         self.fail("Could not find a suitable 2-edge chain on the board.")
+
+
+class TestDevelopmentCards(unittest.TestCase):
+
+    def _ready_game(self):
+        """Return a non-setup game with the dice already rolled for the current player."""
+        game = Game(rng=random.Random(7))
+        game.is_game_start = False
+        game.dice_rolled_this_turn = True
+        return game
+
+    def test_play_monopoly_collects_all_of_resource(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        player = game.get_player(pid)
+        player.dev_cards[Development.MONOPOLY] = 1
+        player.start_of_turn_dev_card_count = 1
+        for other in game.players:
+            if other.id != pid:
+                other.resources[Resource.WOOL] = 2
+        action = Action(ActionType.PLAY_DEV_CARD, (Development.MONOPOLY, Resource.WOOL))
+        game.apply_action(pid, action)
+        expected = 2 * (game.num_players - 1)
+        self.assertEqual(player.resources[Resource.WOOL], expected)
+        for other in game.players:
+            if other.id != pid:
+                self.assertEqual(other.resources[Resource.WOOL], 0)
+        self.assertTrue(game.dev_card_played_this_turn)
+
+    def test_play_year_of_plenty_takes_from_bank(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        player = game.get_player(pid)
+        player.dev_cards[Development.YEAR_OF_PLENTY] = 1
+        player.start_of_turn_dev_card_count = 1
+        brick_before = game.remaining_resource(Resource.BRICK)
+        ore_before = game.remaining_resource(Resource.ORE)
+        action = Action(ActionType.PLAY_DEV_CARD,
+                        (Development.YEAR_OF_PLENTY, (Resource.BRICK, Resource.ORE)))
+        game.apply_action(pid, action)
+        self.assertEqual(player.resources[Resource.BRICK], 1)
+        self.assertEqual(player.resources[Resource.ORE], 1)
+        self.assertEqual(game.remaining_resource(Resource.BRICK), brick_before - 1)
+        self.assertEqual(game.remaining_resource(Resource.ORE), ore_before - 1)
+
+    def test_play_road_building_grants_free_roads(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        player = game.get_player(pid)
+        # Give the player a settlement + road so there are reachable road spots
+        game.is_game_start = True
+        spot = game.get_available_settlement_spots(pid)[0]
+        game.build_settlement(pid, spot)
+        game.is_game_start = False
+        player.dev_cards[Development.ROAD_BUILDING] = 1
+        player.start_of_turn_dev_card_count = 1
+        player.resources = [0, 0, 0, 0, 0]  # no resources: roads must be free
+        action = Action(ActionType.PLAY_DEV_CARD, Development.ROAD_BUILDING)
+        game.apply_action(pid, action)
+        self.assertEqual(game.free_roads_remaining, 2)
+        roads_before = player.roads
+        road_action = next(a for a in game.get_legal_actions(pid)
+                           if a.action_type == ActionType.BUILD_ROAD)
+        game.apply_action(pid, road_action)
+        self.assertEqual(player.roads, roads_before + 1)
+        self.assertEqual(game.free_roads_remaining, 1)
+        # Resources untouched (free road)
+        self.assertEqual(player.resources, [0, 0, 0, 0, 0])
+
+    def test_play_knight_requires_robber_move(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        player = game.get_player(pid)
+        player.dev_cards[Development.KNIGHT] = 1
+        player.start_of_turn_dev_card_count = 1
+        game.apply_action(pid, Action(ActionType.PLAY_DEV_CARD, Development.KNIGHT))
+        self.assertEqual(player.knights_played, 1)
+        self.assertTrue(game.awaiting_robber_move)
+        self.assertFalse(game.robber_moved_this_turn)
+        action_types = {a.action_type for a in game.get_legal_actions(pid)}
+        self.assertEqual(action_types, {ActionType.MOVE_ROBBER})
+
+    def test_largest_army_awarded_and_transferred(self):
+        game = Game(rng=random.Random(7))
+        game.is_game_start = False
+        p0, p1 = game.players[0], game.players[1]
+        # p0 plays three knights -> gets largest army (+2 VP)
+        vp0 = p0.victory_points
+        for _ in range(3):
+            p0.knights_played += 1
+            game._update_largest_army(p0)
+        self.assertTrue(p0.has_largest_army)
+        self.assertEqual(game.largest_army_player_id, 0)
+        self.assertEqual(p0.victory_points, vp0 + 2)
+        # p1 reaches four knights -> steals largest army
+        vp1 = p1.victory_points
+        for _ in range(4):
+            p1.knights_played += 1
+            game._update_largest_army(p1)
+        self.assertTrue(p1.has_largest_army)
+        self.assertFalse(p0.has_largest_army)
+        self.assertEqual(game.largest_army_player_id, 1)
+        self.assertEqual(p1.victory_points, vp1 + 2)
+        self.assertEqual(p0.victory_points, vp0)
+
+
+class TestTrading(unittest.TestCase):
+
+    def _ready_game(self):
+        game = Game(rng=random.Random(11))
+        game.is_game_start = False
+        game.dice_rolled_this_turn = True
+        return game
+
+    def _build_proposal(self, game, proposer, target):
+        # proposer gives 1 brick, receives 1 ore
+        given = [1, 0, 0, 0, 0]
+        received = [0, 0, 0, 1, 0]
+        return TradeProposal(game, proposer, target, given, received)
+
+    def test_accepted_trade_exchanges_resources(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        proposer = game.get_player(pid)
+        target = next(p for p in game.players if p.id != pid)
+        proposer.resources = [1, 0, 0, 0, 0]
+        target.resources = [0, 0, 0, 1, 0]
+        proposal = self._build_proposal(game, proposer, target)
+        game.apply_action(pid, Action(ActionType.PROPOSE_TRADE, proposal))
+        self.assertEqual(game.current_trade_on_table, (pid, target.id))
+        # target accepts
+        game.apply_action(target.id, Action(ActionType.RESPOND_TO_TRADE, True))
+        self.assertEqual(proposer.resources, [0, 0, 0, 1, 0])
+        self.assertEqual(target.resources, [1, 0, 0, 0, 0])
+        self.assertIsNone(game.current_trade_on_table)
+        self.assertIsNone(game.pending_trade)
+
+    def test_rejected_trade_leaves_resources_untouched(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        proposer = game.get_player(pid)
+        target = next(p for p in game.players if p.id != pid)
+        proposer.resources = [1, 0, 0, 0, 0]
+        target.resources = [0, 0, 0, 1, 0]
+        proposal = self._build_proposal(game, proposer, target)
+        game.apply_action(pid, Action(ActionType.PROPOSE_TRADE, proposal))
+        game.apply_action(target.id, Action(ActionType.RESPOND_TO_TRADE, False))
+        self.assertEqual(proposer.resources, [1, 0, 0, 0, 0])
+        self.assertEqual(target.resources, [0, 0, 0, 1, 0])
+        self.assertIsNone(game.current_trade_on_table)
+
+    def test_only_target_acts_while_trade_pending(self):
+        game = self._ready_game()
+        pid = game.current_turn
+        proposer = game.get_player(pid)
+        target = next(p for p in game.players if p.id != pid)
+        proposer.resources = [1, 0, 0, 0, 0]
+        target.resources = [0, 0, 0, 1, 0]
+        proposal = self._build_proposal(game, proposer, target)
+        game.apply_action(pid, Action(ActionType.PROPOSE_TRADE, proposal))
+        # proposer must wait
+        self.assertEqual(game.get_legal_actions(pid), [])
+        # target may respond
+        target_types = {a.action_type for a in game.get_legal_actions(target.id)}
+        self.assertEqual(target_types, {ActionType.RESPOND_TO_TRADE})
+        # a third player has nothing to do
+        third = next(p for p in game.players if p.id not in (pid, target.id))
+        self.assertEqual(game.get_legal_actions(third.id), [])
+
+
+class TestWinCondition(unittest.TestCase):
+
+    def test_game_starts_not_over(self):
+        game = Game(rng=random.Random(3))
+        self.assertFalse(game.game_over)
+        self.assertIsNone(game.winner_id)
+
+    def test_reaching_ten_points_ends_game(self):
+        game = Game(rng=random.Random(3))
+        game.is_game_start = False
+        game.dice_rolled_this_turn = True
+        pid = game.current_turn
+        player = game.get_player(pid)
+        # Two knights already played; one more grants largest army (+2 VP) to reach 10.
+        player.victory_points = 8
+        player.knights_played = 2
+        player.dev_cards[Development.KNIGHT] = 1
+        player.start_of_turn_dev_card_count = 1
+        game.apply_action(pid, Action(ActionType.PLAY_DEV_CARD, Development.KNIGHT))
+        self.assertEqual(player.victory_points, 10)
+        self.assertTrue(game.game_over)
+        self.assertEqual(game.winner_id, pid)
 
 
 if __name__ == '__main__':

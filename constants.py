@@ -58,3 +58,6 @@ CHIT_DIST_MOD = [1 / 18 + 1 / 36, 1 / 9 + 1 / 36, 1 / 9 + 1 / 36, 1 / 9 + 1 / 36
                  1 / 9 + 1 / 36, 1 / 18 + 1 / 36]
 
 MAX_TRADE_PROPOSALS = 5
+
+# Victory points required to win the game.
+VICTORY_POINTS_TO_WIN = 10

@@ -29,6 +29,7 @@ class Player:
         self.buildings = set()
         self.has_largest_army = False
         self.has_longest_road = False
+        self.knights_played = 0
         self.first_settlement_played = False
         self.resource_exchange_rate = {
             Resource.BRICK: 4, Resource.GRAIN: 4, Resource.LUMBER: 4,
