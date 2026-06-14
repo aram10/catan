@@ -61,3 +61,6 @@ MAX_TRADE_PROPOSALS = 5
 
 # Victory points required to win the game.
 VICTORY_POINTS_TO_WIN = 10
+
+# Minimum continuous road length required to earn the Longest Road bonus.
+LONGEST_ROAD_MINIMUM = 5

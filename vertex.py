@@ -18,5 +18,5 @@ class Vertex:
     def __hash__(self):
         return hash(self.vertex_id)
 
-    def upgrade_to_city(self) -> bool:
+    def upgrade_to_city(self) -> None:
         self.is_city = True

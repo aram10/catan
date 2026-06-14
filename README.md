@@ -6,10 +6,18 @@ This is a passion project of mine; if you are interested in contributing or just
 
 ## Usage
 
+Requires Python 3.10+.
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
 Run the game:
 
-```python
-python game.py
+```bash
+python main.py
 ```
 
 Currently, the GUI only renders the board and allows you to perform the setup phase (build first 2 settlements and roads). 

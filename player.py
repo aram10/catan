@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 
 from constants import Resource, PlayerColor
+from actions import ActionType
 from edge import Edge
 from port import Port
 from trade import TradeProposal
@@ -142,9 +143,6 @@ class Player:
                 f"Player {self.id} cannot give up {amt} of {resource.name}; only has {self.resources[resource]}")
         self.resources[resource] -= amt
 
-    def give_victory_points(self, amt: int):
-        self.victory_points += amt
-
     def __hash__(self):
         return hash(self.id)
 
@@ -166,7 +164,7 @@ class Mask:
         per-target Mask methods (settlement_mask, road_mask, city_mask, robber_mask, ...)
         then refine each enabled type.
         """
-        mask = np.zeros(13)
+        mask = np.zeros(len(ActionType))
         legal_actions = self.game.get_legal_actions(self.player.id)
         for action in legal_actions:
             mask[action.action_type.value] = 1.0

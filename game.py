@@ -6,7 +6,7 @@ from networkx import Graph
 
 from actions import Action, ActionType
 from board import Board
-from constants import PlayerColor, Development, Resource, MAX_TRADE_PROPOSALS, VICTORY_POINTS_TO_WIN
+from constants import PlayerColor, Development, Resource, MAX_TRADE_PROPOSALS, VICTORY_POINTS_TO_WIN, LONGEST_ROAD_MINIMUM
 from edge import Edge
 from player import Player, Agent, RandomAgent
 from tile import Tile
@@ -58,6 +58,8 @@ class Game:
         self.free_roads_remaining = 0
         # player ID currently holding the largest army bonus (-1 if nobody)
         self.largest_army_player_id = -1
+        # player ID currently holding the longest road bonus (-1 if nobody)
+        self.longest_road_player_id = -1
         self.trades_proposed_this_turn = 0
         # (from, to)
         self.current_trade_on_table: tuple[int, int] | None = None
@@ -147,6 +149,8 @@ class Game:
             self.player_buildings[player_id].add(vertex)
             self._refund_to_bank({Resource.BRICK: 1, Resource.LUMBER: 1,
                                   Resource.GRAIN: 1, Resource.WOOL: 1})
+        # A settlement may sever an opponent's road, so re-evaluate the bonus.
+        self._recompute_longest_road()
 
     def build_road(self, player_id: int, edge: Edge):
         """Builds a road for a player."""
@@ -166,6 +170,7 @@ class Game:
             player.build_road(edge)
             self._refund_to_bank({Resource.BRICK: 1, Resource.LUMBER: 1})
         self.player_roads[player_id].add(edge)
+        self._recompute_longest_road()
 
     def build_city(self, player_id: int, vertex: Vertex):
         """Builds a city for a player."""
@@ -268,9 +273,6 @@ class Game:
     def get_players(self) -> list[Player]:
         return self.players
 
-    def set_robber_tile(self, tile: Tile):
-        self.robber_tile = tile
-
     def get_legal_actions(self, player_id: int) -> list[Action]:
         """Returns all legal actions for the given player in the current game state."""
         player = self.get_player(player_id)
@@ -369,6 +371,8 @@ class Game:
         Apply a single action for a player. Dispatches to internal methods.
         Raises IllegalActionError if the action is not legal.
         """
+        if self.game_over:
+            raise IllegalActionError("The game is over; no further actions may be applied.")
         if self.is_game_start:
             legal = self.get_legal_setup_actions(player_id)
         else:
@@ -393,7 +397,6 @@ class Game:
             self.build_settlement(player_id, action.target)
         elif action.action_type == ActionType.BUILD_ROAD:
             self.build_road(player_id, action.target)
-            # TODO: award longest road via board.check_longest_road (never called yet).
             if self.is_game_start:
                 self.advance_turn()
         elif action.action_type == ActionType.BUILD_CITY:
@@ -520,6 +523,37 @@ class Game:
                 player.give_largest_army()
                 self.largest_army_player_id = player.id
 
+    def _recompute_longest_road(self):
+        """Award or transfer the Longest Road bonus after the road network changes.
+
+        Rules: a player qualifies with a continuous road of at least
+        ``LONGEST_ROAD_MINIMUM``. The first qualifier earns the bonus; a current
+        holder keeps it on a tie and only loses it to a single player whose road is
+        strictly longer (or when their own road drops below the minimum). When the
+        title is vacant it is granted only to an unambiguous (single) leader.
+        """
+        lengths = {p.id: self.board.longest_road_length(p.id) for p in self.players}
+        holder = self.longest_road_player_id
+
+        if holder != -1 and lengths[holder] < LONGEST_ROAD_MINIMUM:
+            self.get_player(holder).remove_longest_road()
+            self.longest_road_player_id = -1
+            holder = -1
+
+        best_len = max(lengths.values(), default=0)
+        if best_len < LONGEST_ROAD_MINIMUM:
+            return
+        leaders = [pid for pid, length in lengths.items() if length == best_len]
+
+        if holder == -1:
+            if len(leaders) == 1:
+                self.get_player(leaders[0]).give_longest_road()
+                self.longest_road_player_id = leaders[0]
+        elif best_len > lengths[holder] and len(leaders) == 1 and leaders[0] != holder:
+            self.get_player(holder).remove_longest_road()
+            self.get_player(leaders[0]).give_longest_road()
+            self.longest_road_player_id = leaders[0]
+
     def _play_monopoly(self, player: Player, resource: Resource):
         total = 0
         for other in self.players:
@@ -590,9 +624,8 @@ class Game:
         next_player.start_of_turn_dev_card_count = next_player.total_dev_card_count()
 
     def _apply_propose_trade(self, player_id: int, proposal: TradeProposal):
-        """Put a proposed player-to-player trade on the table awaiting a response."""
         if proposal is None:
-            raise IllegalActionError("PROPOSE_TRADE requires a TradeProposal target.")
+            return
         if proposal.proposer.id != player_id:
             raise IllegalActionError(
                 f"Player {player_id} cannot propose a trade on behalf of player {proposal.proposer.id}.")
