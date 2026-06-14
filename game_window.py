@@ -408,6 +408,7 @@ class GameWindow:
         self.user_show_available_setup_settlement_spots(continuation)
 
     def computer_agent_setup_turn(self, player_id):
+        # TODO: stub — drive get_legal_setup_actions + agent.choose_action + apply_action.
         agent = self.game.get_agent(player_id)
 
     def draw_settlement(self, pos: Tuple[float, float]):

@@ -3,11 +3,8 @@ import itertools
 import math
 import random
 from collections import defaultdict, deque, Counter
-from random import shuffle, sample
 from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable, Optional
 import networkx as nx
-
-import numpy as np
 
 import constants
 from custom_types import GraphEdge, TileCoords, EdgeCoords, TileGrid, TileData, GraphVertex
@@ -22,19 +19,22 @@ from tile import Tile
 from vertex import Vertex
 
 
-def generate_resources_and_chits(num_tiles: int) -> TileData:
+def generate_resources_and_chits(num_tiles: int, rng: random.Random = None) -> TileData:
     """
     Creates resource/chit pairs that will be assigned to board tiles.
 
     :param num_tiles: Number of tiles to get resources/chits.
+    :param rng: Optional random.Random instance for determinism.
     :return: List of (resource, chit_value) tuples.
     """
+    if rng is None:
+        rng = random.Random()
     chits = ([2] + (list(range(3, 7)) + list(range(8, 12))) * 2 + [12]) * ((num_tiles // 19) + 1)
-    shuffle(chits)
+    rng.shuffle(chits)
     base_resources = [Resource.BRICK, Resource.GRAIN, Resource.LUMBER, Resource.ORE, Resource.WOOL]
     resources = base_resources * ((num_tiles // len(base_resources)) + 1)
-    shuffle(resources)
-    desert_tiles = set(sample(list(range(num_tiles)), max((num_tiles // 10), 1)))
+    rng.shuffle(resources)
+    desert_tiles = set(rng.sample(list(range(num_tiles)), max((num_tiles // 10), 1)))
     tile_data = []
     for idx in range(num_tiles):
         tile_data.append((resources.pop(), chits.pop()) if idx not in desert_tiles else (Resource.DESERT, -1))
@@ -101,9 +101,10 @@ def get_shared_edge_coords(t1: Tile, t2: Tile) -> Tuple[int, int]:
 
 class Board:
 
-    def __init__(self, board_size: int):
+    def __init__(self, board_size: int, rng: random.Random = None):
         # TODO: Cache boards for re-use
         self.board_size = board_size
+        self.rng = rng or random.Random()
         num_tiles = 1 + sum([6 * i for i in range(1, board_size + 1)])
         self.tiles, self.tile_coords = generate_board(board_size)
         # models adjacent vertices (i.e., edges)
@@ -113,7 +114,7 @@ class Board:
         # holds actual Vertex objects referred to by the graph
         self.vertex_objects = {}
         # only generate resources/chits for non-water tiles
-        tile_data = generate_resources_and_chits(num_tiles - 6 * board_size)
+        tile_data = generate_resources_and_chits(num_tiles - 6 * board_size, self.rng)
         remaining_chits = [2, 3, 4, 5, 9, 10, 11, 12]
         for coord in self.tile_coords:
             tile = self.get_tile(coord[0], coord[1])
@@ -127,8 +128,8 @@ class Board:
                     # enforce rule that there are no 8-8, 6-6, or 8-6 connections
                     neighbor_rolls = {x.dice_num for x in self.get_neighboring_tiles(tile)}
                     if 6 in neighbor_rolls or 8 in neighbor_rolls:
-                        chit_val = remaining_chits[
-                            np.where(np.random.multinomial(1, constants.CHIT_DIST_MOD) == 1)[0][0]]
+                        chit_val = self.rng.choices(
+                            remaining_chits, weights=constants.CHIT_DIST_MOD, k=1)[0]
                 tile.resource = resource
                 tile.dice_num = chit_val
             self.tile_graph.add_node(tile)
@@ -225,7 +226,7 @@ class Board:
         num_ports = 3 * self.board_size
         port_resources = [Resource.GRAIN, Resource.ORE, Resource.WOOL, Resource.LUMBER, Resource.BRICK,
                           Resource.ANY] * (math.ceil(num_ports / 6) + 1)
-        shuffle(port_resources)
+        self.rng.shuffle(port_resources)
         # begin initializing the first port
         curr_resource = port_resources.pop()
         curr = shore_vertices[0]
@@ -315,16 +316,17 @@ class Board:
         that are reachable from start via roads built by the given player.
         """
         queue = deque([start])
-        res = [start]
+        res = []
         visited = defaultdict(bool)
         while queue:
             curr = queue.popleft()
             for neighbor in self.vertex_graph.neighbors(curr):
+                edge_key = frozenset({curr, neighbor})
                 edge = self.get_edge_from_graph_edge((curr, neighbor))
-                if edge.player_road_id == player_road_id and not visited[frozenset({curr, neighbor})]:
-                    visited[frozenset({start, neighbor})] = True
+                if edge.player_road_id == player_road_id and not visited[edge_key]:
+                    visited[edge_key] = True
                     queue.append(neighbor)
-                    res.append(frozenset({start, neighbor}))
+                    res.append(edge_key)
         return res
 
     def get_tile(self, q: int, r: int) -> Tile:
@@ -392,11 +394,11 @@ class Board:
         """
         Temporary method for choosing robber position.
         """
-        q = random.randint(0, 2 * self.board_size)
-        r = random.randint(0, 2 * self.board_size)
+        q = self.rng.randint(0, 2 * self.board_size)
+        r = self.rng.randint(0, 2 * self.board_size)
         while (tile := self.get_tile(q, r)) is None:
-            q = random.randint(0, 2 * self.board_size)
-            r = random.randint(0, 2 * self.board_size)
+            q = self.rng.randint(0, 2 * self.board_size)
+            r = self.rng.randint(0, 2 * self.board_size)
         return tile
 
     def get_desert_tiles(self) -> Set[Tile]:

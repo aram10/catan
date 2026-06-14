@@ -11,8 +11,10 @@ class TradeProposal:
                  resources_received: List[int]):
         self.proposer = proposer
         self.target = target
-        if not all(x > 0 for x in resources_given + resources_received):
+        if not all(x >= 0 for x in resources_given + resources_received):
             raise ValueError("All resources must be non-negative.")
+        if sum(resources_given) == 0 or sum(resources_received) == 0:
+            raise ValueError("A trade must involve giving and receiving at least one resource.")
         self.resources_given = resources_given
         self.resources_received = resources_received
 

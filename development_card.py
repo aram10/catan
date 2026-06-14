@@ -30,7 +30,7 @@ class Knight(DevelopmentCard):
         tile = game.board.get_tile(tile_location)
         game.set_robber_tile(tile)
         player2 = player.select_player_to_steal_from(game, tile)
-        resource = player2.get_random_available_resource()
+        resource = player2.get_random_available_resource(game.rng)
         player2.take_resource(resource, 1)
         player.give_resource(resource, 1)
 
