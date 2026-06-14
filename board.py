@@ -1,8 +1,6 @@
-import heapq
-import itertools
 import math
 import random
-from collections import defaultdict, deque, Counter
+from collections import defaultdict
 from typing import List, TYPE_CHECKING, Tuple, Set, Dict, Iterable, Optional
 import networkx as nx
 
@@ -151,8 +149,6 @@ class Board:
         self.ordered_vertices = [self.vertex_objects[coord] for coord in
                                  sorted(self.vertex_objects, key=lambda coords: min(coords))]
         self.ordered_edges = sorted(self.get_edges(), key=lambda e: e.coords)
-        self.edge_index_map = {edge.coords: idx for (idx, edge) in enumerate(self.ordered_edges)}
-        self.vertex_index_map = {vertex.vertex_id: idx for (idx, vertex) in enumerate(self.ordered_vertices)}
 
     @property
     def num_edges(self):
@@ -263,71 +259,43 @@ class Board:
                 break
             curr = neighbors[0]
 
-    def check_longest_road(self, starting_road: Edge, curr_longest: int) -> bool:
+    def longest_road_length(self, player_id: int) -> int:
         """
-        Generally, this problem is isomorphic to unweighted Longest Path Problem, which is NP-Hard. Fortunately, we can
-        cut some corners.
+        Length of the longest continuous road (a trail: no edge reused) built by ``player_id``.
 
-        We only need to re-check for longest road whenever someone builds a road. And, if building a road causes the
-        longest road to change, then it must include that road. So, we only need to consider the roads that are directly
-        connected to the added road. Take the two vertices on either side of the given edge, and find all other vertices
-        that can be reached using only the roads of the given player (the one who built the road). Call this component
-        G*.
-
-        For every node in G*, perform a DFS to every other node, calculating the longest paths possible. We can do this
-        via backtracking or a LIFO queue. The new longest road, if one exists, is 1 road longer than the old longest
-        road. So, if we ever see such a path length, we can stop searching.
-
-        This method returns True if there is a new longest road, and False otherwise.
+        A road is broken by an opponent's settlement/city: the traversal may end on, but never
+        pass through, a vertex owned by another player. The player's road network is tiny
+        (<= 15 edges), so an exhaustive DFS over edges is inexpensive.
         """
-        p_id = starting_road.player_road_id
-        if p_id == -1:
-            raise ValueError("Cannot check for longest road starting on an Edge with no road built on it.")
-        graph_edge = self.get_graph_edge_from_edge(starting_road)
-        if not graph_edge:
-            raise ValueError("Invalid starting road.")
-        v1, v2 = graph_edge
-        edges = self._get_connected_edges(v1, p_id)
-        # consider vertices with only one outgoing road first - if such vertices exist (e.g. longest road is not a cycle) then the longest possible road always starts from one of these
-        vertices = set().union(*[vertex for edge in edges for vertex in edge])
-        boundary_vertices = set(v for v in vertices if len([(a, b) for a, b in self.vertex_graph.edges(v) if
-                                                            self.get_edge_from_graph_edge(
-                                                                (a, b)).player_road_id == p_id]) == 1)
-        edges = sorted(edges, key=lambda e: e[0] not in boundary_vertices and e[1] not in boundary_vertices)
-        # we want to treat the edges (roads) as the vertices themselves
-        for i, edge in enumerate(edges):
-            pq = [(-1, edge)]
-            while pq:
-                dist, curr = heapq.heappop(pq)
-                node_1, node_2 = curr
-                self.vertex_graph[node_1][node_2]['visited'] = i
-                for node in [node_1, node_2]:
-                    for neighbor_node in self.vertex_graph.neighbors(node):
-                        e = self.get_edge_from_graph_edge((node, neighbor_node))
-                        if e.player_road_id == p_id and self.vertex_graph[node][neighbor_node]['visited'] != i:
-                            if -dist + 1 > curr_longest:
-                                return True
-                            heapq.heappush(pq, (dist - 1, (node, neighbor_node)))
-        return False
+        adjacency = defaultdict(list)
+        for u, v in self.vertex_graph.edges:
+            if self.get_edge_from_graph_edge((u, v)).player_road_id == player_id:
+                edge_key = frozenset((u, v))
+                adjacency[u].append((v, edge_key))
+                adjacency[v].append((u, edge_key))
+        if not adjacency:
+            return 0
 
-    def _get_connected_edges(self, start: GraphVertex, player_road_id: int) -> List[GraphEdge]:
-        """
-        Given an initial vertex (start) in the networkx vertex graph, and a player ID, returns all edges in the graph
-        that are reachable from start via roads built by the given player.
-        """
-        queue = deque([start])
-        res = []
-        visited = defaultdict(bool)
-        while queue:
-            curr = queue.popleft()
-            for neighbor in self.vertex_graph.neighbors(curr):
-                edge_key = frozenset({curr, neighbor})
-                edge = self.get_edge_from_graph_edge((curr, neighbor))
-                if edge.player_road_id == player_road_id and not visited[edge_key]:
-                    visited[edge_key] = True
-                    queue.append(neighbor)
-                    res.append(edge_key)
-        return res
+        def can_pass_through(vertex_id: GraphVertex) -> bool:
+            vertex_obj = self.vertex_objects.get(vertex_id)
+            return vertex_obj is None or vertex_obj.player_id in (-1, player_id)
+
+        best = 0
+
+        def dfs(node: GraphVertex, used: set) -> None:
+            nonlocal best
+            best = max(best, len(used))
+            if used and not can_pass_through(node):
+                return
+            for neighbor, edge_key in adjacency[node]:
+                if edge_key not in used:
+                    used.add(edge_key)
+                    dfs(neighbor, used)
+                    used.remove(edge_key)
+
+        for start in list(adjacency):
+            dfs(start, set())
+        return best
 
     def get_tile(self, q: int, r: int) -> Tile:
         try:
@@ -343,9 +311,6 @@ class Board:
 
     def get_vertices(self) -> Iterable[Vertex]:
         return iter(self.vertex_objects[x] for x in self.vertex_objects.keys())
-
-    def get_num_vertices(self) -> int:
-        return len(self.vertex_objects)
 
     def get_neighboring_tiles(self, tile: Tile) -> Set[Tile]:
         res = set()
@@ -374,9 +339,6 @@ class Board:
             i, j = self.vertex_graph.get_edge_data(v_id, x)['obj']
             res.append(self.edges[i][j])
         return res
-
-    def get_tile_coords(self) -> TileCoords:
-        return self.tile_coords
 
     def get_tiles_with_chit(self, chit: int) -> List[Tile]:
         """
@@ -431,15 +393,3 @@ class Board:
     def get_vertices_from_edge(self, edge: Edge) -> Tuple[Vertex, Vertex]:
         v1, v2 = self.get_graph_edge_from_edge(edge)
         return self.vertex_objects[v1], self.vertex_objects[v2]
-
-    def get_index_of_edge(self, edge: Edge) -> int:
-        """
-        Position of the edge in the ordered edges list.
-        """
-        return self.edge_index_map[edge.coords]
-
-    def get_index_of_vertex(self, vertex: Vertex) -> int:
-        """
-        Position of the vertex in the ordered vertices list.
-        """
-        return self.vertex_index_map[vertex.vertex_id]

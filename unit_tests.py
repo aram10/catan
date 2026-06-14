@@ -77,8 +77,7 @@ class TestTileAndEdgeNeighbors(unittest.TestCase):
 class TestGameBuildSettlement(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
 
     def test_build_settlement_setup_phase(self):
         """During setup phase, player can place a settlement on any available spot."""
@@ -108,8 +107,7 @@ class TestGameBuildSettlement(unittest.TestCase):
 class TestGameBuildRoad(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
 
     def test_build_road_setup_phase(self):
         """During setup phase, player can place a road adjacent to their settlement."""
@@ -137,8 +135,7 @@ class TestGameBuildRoad(unittest.TestCase):
 class TestGameBuildCity(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
 
     def test_build_city_no_settlement(self):
         """Cannot build city without owning a settlement on that vertex."""
@@ -169,8 +166,7 @@ class TestGameBuildCity(unittest.TestCase):
 class TestGameTurnAdvancement(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
 
     def test_advance_turn_setup(self):
         """Setup turn advancement should cycle through setup_turn_order."""
@@ -191,8 +187,7 @@ class TestGameTurnAdvancement(unittest.TestCase):
 class TestPayOutResources(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
 
     def test_payout_with_bank_shortage_single_player(self):
         """If bank can't pay all and only one player receives, that player gets the remainder."""
@@ -285,8 +280,7 @@ class TestPlayerResources(unittest.TestCase):
 class TestActionSystem(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
 
     def test_setup_legal_actions(self):
         """During setup, legal actions should include BUILD_SETTLEMENT."""
@@ -456,8 +450,7 @@ class TestActionSystem(unittest.TestCase):
 class TestMaskTurnIndex(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
         self.game.is_game_start = False
 
     def test_mask_uses_current_turn_not_idx(self):
@@ -520,8 +513,7 @@ class TestMaskTurnIndex(unittest.TestCase):
 class TestMaskAdditional(unittest.TestCase):
 
     def setUp(self):
-        random.seed(42)
-        self.game = Game()
+        self.game = Game(rng=random.Random(42))
         self.game.is_game_start = False
         self.game.dice_rolled_this_turn = True
 
@@ -582,8 +574,7 @@ class TestAdvanceTurnSetupReturn(unittest.TestCase):
 
     def test_advance_turn_setup_returns_player_id(self):
         """advance_turn_setup should return a valid player ID, not an index."""
-        random.seed(42)
-        game = Game()
+        game = Game(rng=random.Random(42))
         # Advance through all setup turns
         while game.is_game_start:
             result = game.advance_turn()
@@ -599,8 +590,7 @@ class TestOwnershipInvariant(unittest.TestCase):
 
     def test_building_ownership_consistent(self):
         """Verify that player_buildings dict is consistent with vertex.player_id."""
-        random.seed(42)
-        game = Game()
+        game = Game(rng=random.Random(42))
         # Place some settlements
         for pid in range(game.num_players):
             spots = game.get_available_settlement_spots(pid)
@@ -615,8 +605,7 @@ class TestOwnershipInvariant(unittest.TestCase):
 
     def test_road_ownership_consistent(self):
         """Verify that player_roads dict is consistent with edge.player_road_id."""
-        random.seed(42)
-        game = Game()
+        game = Game(rng=random.Random(42))
         # Place settlement and road for player 0
         spots = game.get_available_settlement_spots(0)
         game.build_settlement(0, spots[0])
@@ -646,66 +635,6 @@ class TestDeterminism(unittest.TestCase):
         self.assertEqual(g1.turn_order, g2.turn_order)
         # Dev card decks must match
         self.assertEqual(g1.development_cards, g2.development_cards)
-
-
-class TestGetConnectedEdges(unittest.TestCase):
-
-    def test_connected_edges_on_simple_road_chain(self):
-        """_get_connected_edges should find all edges belonging to a player's road chain."""
-        game = Game(rng=random.Random(99))
-        board = game.board
-        # Find a chain of 3 edges: v1-v2-v3-v4
-        for v1 in board.vertex_graph.nodes:
-            neighbors_v1 = list(board.vertex_graph.neighbors(v1))
-            if len(neighbors_v1) < 1:
-                continue
-            v2 = neighbors_v1[0]
-            neighbors_v2 = [n for n in board.vertex_graph.neighbors(v2) if n != v1]
-            if not neighbors_v2:
-                continue
-            v3 = neighbors_v2[0]
-            neighbors_v3 = [n for n in board.vertex_graph.neighbors(v3) if n != v2]
-            if not neighbors_v3:
-                continue
-            v4 = neighbors_v3[0]
-            # Build 3 roads for player 0
-            e1 = board.get_edge_from_graph_edge((v1, v2))
-            e2 = board.get_edge_from_graph_edge((v2, v3))
-            e3 = board.get_edge_from_graph_edge((v3, v4))
-            e1.player_road_id = 0
-            e2.player_road_id = 0
-            e3.player_road_id = 0
-            connected = board._get_connected_edges(v1, 0)
-            self.assertEqual(len(connected), 3)
-            # All 3 edge keys should be present
-            edge_keys = {frozenset({v1, v2}), frozenset({v2, v3}), frozenset({v3, v4})}
-            self.assertEqual(set(connected), edge_keys)
-            return
-        self.fail("Could not find a suitable 3-edge chain on the board.")
-
-    def test_connected_edges_stops_at_other_player_roads(self):
-        """_get_connected_edges should not cross roads belonging to another player."""
-        game = Game(rng=random.Random(99))
-        board = game.board
-        for v1 in board.vertex_graph.nodes:
-            neighbors_v1 = list(board.vertex_graph.neighbors(v1))
-            if len(neighbors_v1) < 1:
-                continue
-            v2 = neighbors_v1[0]
-            neighbors_v2 = [n for n in board.vertex_graph.neighbors(v2) if n != v1]
-            if not neighbors_v2:
-                continue
-            v3 = neighbors_v2[0]
-            # Player 0 owns v1-v2, player 1 owns v2-v3
-            e1 = board.get_edge_from_graph_edge((v1, v2))
-            e2 = board.get_edge_from_graph_edge((v2, v3))
-            e1.player_road_id = 0
-            e2.player_road_id = 1
-            connected = board._get_connected_edges(v1, 0)
-            self.assertEqual(len(connected), 1)
-            self.assertEqual(connected[0], frozenset({v1, v2}))
-            return
-        self.fail("Could not find a suitable 2-edge chain on the board.")
 
 
 class TestDevelopmentCards(unittest.TestCase):
@@ -898,6 +827,150 @@ class TestWinCondition(unittest.TestCase):
         self.assertEqual(player.victory_points, 10)
         self.assertTrue(game.game_over)
         self.assertEqual(game.winner_id, pid)
+
+
+def _find_vertex_path(board, num_edges):
+    """Return a list of graph-vertex ids forming a simple path with ``num_edges`` edges."""
+    graph = board.vertex_graph
+    target = num_edges + 1
+
+    def dfs(node, path, seen):
+        if len(path) == target:
+            return list(path)
+        for neighbor in graph.neighbors(node):
+            if neighbor not in seen:
+                seen.add(neighbor)
+                path.append(neighbor)
+                result = dfs(neighbor, path, seen)
+                if result:
+                    return result
+                path.pop()
+                seen.discard(neighbor)
+        return None
+
+    for start in graph.nodes:
+        result = dfs(start, [start], {start})
+        if result:
+            return result
+    return None
+
+
+class TestProposeTradeNoOp(unittest.TestCase):
+    """A bare PROPOSE_TRADE (target None) is advertised as legal, so it must be applicable."""
+
+    def test_bare_propose_trade_is_a_noop_not_an_error(self):
+        game = Game(rng=random.Random(13))
+        game.is_game_start = False
+        game.dice_rolled_this_turn = True
+        pid = game.current_turn
+        legal = game.get_legal_actions(pid)
+        bare = next(a for a in legal if a.action_type == ActionType.PROPOSE_TRADE)
+        self.assertIsNone(bare.target)
+        # Applying the exact action returned by get_legal_actions must not raise.
+        game.apply_action(pid, bare)
+        self.assertIsNone(game.current_trade_on_table)
+        self.assertIsNone(game.pending_trade)
+
+    def test_random_agent_can_apply_every_offered_action(self):
+        """Contract: every action from get_legal_actions is applicable without error."""
+        game = Game(rng=random.Random(21))
+        game.is_game_start = False
+        game.dice_rolled_this_turn = True
+        pid = game.current_turn
+        agent = RandomAgent(game.players[pid], game)
+        for _ in range(40):
+            action = agent.choose_action(game.get_legal_actions(pid))
+            if action.action_type in (ActionType.END_TURN, ActionType.PROPOSE_TRADE):
+                # apply and stop (END_TURN changes turn; PROPOSE_TRADE no-op is the case under test)
+                game.apply_action(pid, action)
+                break
+            game.apply_action(pid, action)
+
+
+class TestLongestRoad(unittest.TestCase):
+
+    def _road_game(self):
+        game = Game(rng=random.Random(5))
+        game.is_game_start = False
+        return game
+
+    def _build_chain(self, game, player_id, vertex_path):
+        for a, b in zip(vertex_path, vertex_path[1:]):
+            game.board.get_edge_from_graph_edge((a, b)).player_road_id = player_id
+
+    def test_reaching_minimum_awards_bonus(self):
+        game = self._road_game()
+        path = _find_vertex_path(game.board, 5)
+        self.assertIsNotNone(path)
+        self._build_chain(game, 0, path)
+        self.assertEqual(game.board.longest_road_length(0), 5)
+        vp = game.players[0].victory_points
+        game._recompute_longest_road()
+        self.assertTrue(game.players[0].has_longest_road)
+        self.assertEqual(game.longest_road_player_id, 0)
+        self.assertEqual(game.players[0].victory_points, vp + 2)
+
+    def test_shorter_road_does_not_qualify(self):
+        game = self._road_game()
+        path = _find_vertex_path(game.board, 4)
+        self._build_chain(game, 0, path)
+        game._recompute_longest_road()
+        self.assertFalse(game.players[0].has_longest_road)
+        self.assertEqual(game.longest_road_player_id, -1)
+
+    def test_tie_does_not_transfer_bonus(self):
+        game = self._road_game()
+        path = _find_vertex_path(game.board, 11)
+        self.assertIsNotNone(path)
+        self._build_chain(game, 0, path[0:6])   # 5 edges
+        game._recompute_longest_road()          # player 0 reaches the minimum first
+        self.assertEqual(game.longest_road_player_id, 0)
+        self._build_chain(game, 1, path[6:12])  # 5 edges, vertex-disjoint (later tie)
+        game._recompute_longest_road()
+        self.assertEqual(game.longest_road_player_id, 0)
+        self.assertTrue(game.players[0].has_longest_road)
+        self.assertFalse(game.players[1].has_longest_road)
+
+    def test_strictly_longer_road_transfers_bonus(self):
+        game = self._road_game()
+        path = _find_vertex_path(game.board, 12)
+        self.assertIsNotNone(path)
+        self._build_chain(game, 0, path[0:6])    # 5 edges
+        game._recompute_longest_road()
+        self.assertEqual(game.longest_road_player_id, 0)
+        vp0 = game.players[0].victory_points
+        vp1 = game.players[1].victory_points
+        self._build_chain(game, 1, path[6:13])   # 6 edges, vertex-disjoint
+        game._recompute_longest_road()
+        self.assertEqual(game.longest_road_player_id, 1)
+        self.assertTrue(game.players[1].has_longest_road)
+        self.assertFalse(game.players[0].has_longest_road)
+        self.assertEqual(game.players[0].victory_points, vp0 - 2)
+        self.assertEqual(game.players[1].victory_points, vp1 + 2)
+
+    def test_breaking_road_below_minimum_revokes_bonus(self):
+        game = self._road_game()
+        path = _find_vertex_path(game.board, 5)
+        self._build_chain(game, 0, path)
+        game._recompute_longest_road()
+        self.assertEqual(game.longest_road_player_id, 0)
+        # Opponent settlement on a middle vertex splits the 5-chain below the minimum.
+        game.board.vertex_objects[path[2]].player_id = 1
+        game._recompute_longest_road()
+        self.assertFalse(game.players[0].has_longest_road)
+        self.assertEqual(game.longest_road_player_id, -1)
+
+    def test_build_road_awards_bonus_via_apply(self):
+        """Integration: laying a 5-road chain through build_road grants the bonus."""
+        game = self._road_game()
+        game.is_game_start = True  # place_road path: no resource cost
+        path = _find_vertex_path(game.board, 5)
+        for a, b in zip(path, path[1:]):
+            edge = game.board.get_edge_from_graph_edge((a, b))
+            game.build_road(0, edge)
+        self.assertTrue(game.players[0].has_longest_road)
+        self.assertEqual(game.longest_road_player_id, 0)
+        self.assertEqual(game.players[0].victory_points, 2)
 
 
 if __name__ == '__main__':

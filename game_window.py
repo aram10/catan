@@ -368,9 +368,9 @@ class GameWindow:
         wool = wool.resize((32, 32), Image.LANCZOS)
         self.sprites['wool'] = ImageTk.PhotoImage(wool)
 
-        any = Image.open("sprites/any.png")
-        any = any.resize((32, 32), Image.LANCZOS)
-        self.sprites['any'] = ImageTk.PhotoImage(any)
+        any_sprite = Image.open("sprites/any.png")
+        any_sprite = any_sprite.resize((32, 32), Image.LANCZOS)
+        self.sprites['any'] = ImageTk.PhotoImage(any_sprite)
 
         for x in ['red', 'orange', 'blue', 'green', 'white', 'brown']:
             settlement = Image.open(f"sprites/settlements/settlement_{x}.png")
@@ -467,7 +467,7 @@ class GameWindow:
     def user_show_available_road_spots(self, continuation):
         available_road_spots = self.game.get_available_road_spots(self.game.players[self.game.current_turn].id)
         positions = [e.canvas_pos for e in available_road_spots]
-        for pos in [e.canvas_pos for e in available_road_spots]:
+        for pos in positions:
             def on_build_setup_road(x, pos=pos):
                 self.user_build_road(pos)
                 continuation()
