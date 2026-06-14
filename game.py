@@ -1,48 +1,49 @@
 from collections import defaultdict
 import random
-from typing import List, Optional, Tuple, Set
 
 from networkx import Graph
 
+from actions import Action, ActionType
 from board import Board
-from constants import PlayerColor, Development, Resource
+from constants import PlayerColor, Development, Resource, MAX_TRADE_PROPOSALS
 from edge import Edge
-from game_window import GameWindow
-from player import Player, Agent
+from player import Player, Agent, RandomAgent
 from tile import Tile
 from vertex import Vertex
-from exceptions import FailedBuildError
+from exceptions import FailedBuildError, IllegalActionError
 
 
 class Game:
 
-    def __init__(self, six_players=False):
+    def __init__(self, six_players=False, rng: random.Random = None):
+        self.rng = rng or random.Random()
         self.players = [Player(i, PlayerColor(i)) for i in range(4)]
         if six_players:
-            self.board = Board(4)
+            self.board = Board(4, rng=self.rng)
             for i in range(4, 6):
                 self.players.append(Player(i, PlayerColor(i)))
         else:
-            self.board = Board(3)
+            self.board = Board(3, rng=self.rng)
         self.agents = {}
         for player in self.players[1:]:
-            self.agents[player.id] = Agent(player, self)
+            self.agents[player.id] = RandomAgent(player, self)
         self.num_players = len(self.players)
 
-        self.robber_tile = random.choice(list(self.board.get_desert_tiles()))
+        self.robber_tile = self.rng.choice(list(self.board.get_desert_tiles()))
+        self.robber_tile.robber = True
         self.player_buildings = defaultdict(set)
         self.player_roads = defaultdict(set)
         self.resource_cards = [19] * 5
         self.development_cards = [Development.KNIGHT] * 14 + [Development.ROAD_BUILDING] * 2 + [
             Development.YEAR_OF_PLENTY] * 2 + [Development.MONOPOLY] * 2 + [Development.VICTORY_POINT] * 5
-        random.shuffle(self.development_cards)
+        self.rng.shuffle(self.development_cards)
         self.dev_card_idx = 0
 
         # turn logic
         # the user of the GUI is always player 0
         self.current_turn_idx = 0
         self.turn_order = list(range(self.num_players))
-        random.shuffle(self.turn_order)
+        self.rng.shuffle(self.turn_order)
         self.dice_rolled_this_turn = False
         self.robber_moved_this_turn = False
         self.stole_this_turn = False
@@ -51,7 +52,7 @@ class Game:
         self.num_dev_cards_bought_this_turn = [0] * 5
         self.trades_proposed_this_turn = 0
         # (from, to)
-        self.current_trade_on_table: Optional[Tuple[int, int]] = None
+        self.current_trade_on_table: tuple[int, int] | None = None
 
         # setup turn logic (only for beginning phase)
         self.current_setup_turn_idx = 0
@@ -71,31 +72,11 @@ class Game:
         return self.resource_cards[resource]
 
     def dispense_resource(self, resource: Resource, amt: int):
-        assert amt <= self.resource_cards[resource], f"Withdrawing too much {resource}"
+        if amt > self.resource_cards[resource]:
+            raise ValueError(f"Cannot dispense {amt} of {resource}; only {self.resource_cards[resource]} remain")
         self.resource_cards[resource] -= amt
 
-    def roll(self, player: Player):
-        """
-        Rolls both dice, and notifies all Player objects of the outcome.
-        """
-        roll = random.randrange(1, 7) + random.randrange(1, 7)
-        if roll == 7:
-            # TODO: Allow player to choose robber spot and player to rob
-            tile = self.board.fetch_random_tile()
-            self.robber_tile.robber = False
-            tile.robber = True
-            self.robber_tile = tile
-            player2 = random.choice(self.get_players_on_tile(tile))
-            player2_resource = random.choice(player2.get_available_resources())
-            player2.take_resource(player2_resource, 1)
-            player.give_resource(player2_resource, 1)
-        else:
-            producing_tiles = self.board.get_tiles_with_chit(roll)
-            self.pay_out_resources(producing_tiles)
-
-        # TODO: Need to allow player to actually take turn
-
-    def pay_out_resources(self, producing_tiles: List[Tile]):
+    def pay_out_resources(self, producing_tiles: list[Tile]):
         """
         This method causes every tile not occupied by the robber to produce resources for the players with properties on
         its vertices. The bank may not have enough of a particular resource to pay out what is owed. Suppose there is
@@ -104,106 +85,85 @@ class Game:
         """
         resource_count = [0]*5
         resource_payout = [[0]*5 for _ in range(self.num_players)]
-        player_receiving_resource = [False]*5
+        # Track which players receive each resource (index by resource)
+        players_receiving = [set() for _ in range(5)]
         for tile in producing_tiles:
             if tile.robber:
                 continue
             for vertex in tile.vertices:
                 if vertex.player_id == -1:
                     continue
-                player_receiving_resource[vertex.player_id] = True
                 payout = 2 if vertex.is_city else 1
                 resource_payout[vertex.player_id][tile.resource] += payout
                 resource_count[tile.resource] += payout
-        for resource in [Resource.BRICK, Resource.GRAIN, Resource.LUMBER, Resource.ORE, Resource.WOOL]:
-            if resource_count[resource] > (remaining := self.remaining_resource(resource)):
-                if sum(player_receiving_resource) == 1:
-                    # the one player gets whatever amount of the resource is left
-                    resource_payout[player_receiving_resource.index(True)][resource] = remaining
+                players_receiving[tile.resource].add(vertex.player_id)
+        for r in range(5):
+            if resource_count[r] > (remaining := self.remaining_resource(Resource(r))):
+                if len(players_receiving[r]) == 1:
+                    sole_player = next(iter(players_receiving[r]))
+                    resource_payout[sole_player][r] = remaining
                 else:
-                    # nobody gets any of the resource
-                    for player_id in range(self.players):
-                        resource_payout[player_id][resource] = 0
-        # actually pay out resources to players
-        for player_id in range(self.players):
-            for resource in [Resource.BRICK, Resource.GRAIN, Resource.LUMBER, Resource.ORE, Resource.WOOL]:
-                self.dispense_resource(resource, resource_payout[player_id][resource])
-                self.get_player(player_id).give_resource(resource, resource_payout[player_id][resource])
+                    for pid in range(self.num_players):
+                        resource_payout[pid][r] = 0
+        for pid in range(self.num_players):
+            for r in range(5):
+                self.dispense_resource(Resource(r), resource_payout[pid][r])
+                self.players[pid].give_resource(Resource(r), resource_payout[pid][r])
+
+    def _refund_to_bank(self, costs: dict):
+        """Credit spent resources back to the bank's supply."""
+        for resource, amount in costs.items():
+            self.resource_cards[resource] += amount
 
     def build_settlement(self, player_id: int, vertex: Vertex):
-        """
-        Builds a settlement for a player.
-        :param player_id: ID of player building settlement
-        :param vertex: Vertex upon which to build settlement
-        """
+        """Builds a settlement for a player."""
         if vertex.player_id != -1:
             raise FailedBuildError(
-                f"Player {str(player_id)} may not build on a spot that Player {str(vertex.player_id)} has already built on.")
+                f"Player {player_id} may not build on a spot that Player {vertex.player_id} has already built on.")
         player = self.players[player_id]
         if self.is_game_start:
             player.place_settlement(vertex)
             self.player_buildings[player_id].add(vertex)
-            if player.first_settlement_played:
-                # the player's second settlement in the setup phase should award resources
-                # get tiles from vertex
-                # for each tile, pay out the tile's resource to the player
-
-                pass
-            else:
+            if not player.first_settlement_played:
                 player.first_settlement_played = True
-
         elif not player.can_build_settlement():
-            raise FailedBuildError(f"Player {str(player_id)} cannot build a settlement.")
+            raise FailedBuildError(f"Player {player_id} cannot build a settlement.")
         else:
             player.build_settlement(vertex)
             self.player_buildings[player_id].add(vertex)
+            self._refund_to_bank({Resource.BRICK: 1, Resource.LUMBER: 1,
+                                  Resource.GRAIN: 1, Resource.WOOL: 1})
 
     def build_road(self, player_id: int, edge: Edge):
-        """
-        Builds a road for a player.
-        :param player_id: ID of player building road
-        :param edge: Edge upon which to build road
-        """
+        """Builds a road for a player."""
         if edge.player_road_id != -1:
             raise FailedBuildError(
-                f"Player {str(player_id)} may not build on a spot that Player {str(edge.player_road_id)} has already built on.")
+                f"Player {player_id} may not build on a spot that Player {edge.player_road_id} has already built on.")
         player = self.players[player_id]
         if self.is_game_start:
             player.place_road(edge)
-            self.player_roads[player_id].add(edge)
         elif not player.can_build_road():
-            raise FailedBuildError(f"Player {str(player_id)} cannot build a road.")
+            raise FailedBuildError(f"Player {player_id} cannot build a road.")
         else:
             player.build_road(edge)
-            self.player_roads[player_id].add(edge)
+            self._refund_to_bank({Resource.BRICK: 1, Resource.LUMBER: 1})
+        self.player_roads[player_id].add(edge)
 
     def build_city(self, player_id: int, vertex: Vertex):
-        """
-        Attempts to build a city for a certain player.
-        :param player_id: ID of player building city
-        :param vertex: Vertex upon which to build city
-        """
+        """Builds a city for a player."""
         player = self.players[player_id]
         if not player.can_build_city():
-            raise FailedBuildError("Player " + player_id + " cannot build a city.")
+            raise FailedBuildError(f"Player {player_id} cannot build a city.")
         if vertex.player_id != player_id:
-            raise FailedBuildError("Player " + player_id + " cannot build a city without first building a settlement.")
-        if vertex.is_city():
+            raise FailedBuildError(f"Player {player_id} cannot build a city without first building a settlement.")
+        if vertex.is_city:
             raise FailedBuildError("A city already exists at this spot.")
         player.build_city(vertex)
+        self._refund_to_bank({Resource.GRAIN: 2, Resource.ORE: 3})
 
-    def get_players_on_tile(self, tile: Tile) -> Set[Player]:
-        """
-        Get all players that have a building on this tile.
-        :param tile: Tiles to check
-        :return: Players on the tile
-        """
-        players = set()
-        vertices = tile.vertices
-        for vertex in vertices:
-            if (i := vertex.player_id) != -1:
-                players.add(self.players[i])
-        return players
+    def get_players_on_tile(self, tile: Tile) -> set[Player]:
+        """Get all players that have a building on this tile."""
+        return {self.players[v.player_id] for v in tile.vertices if v.player_id != -1}
 
     def get_player_subgraph(self, player: Player) -> Graph:
         """
@@ -211,66 +171,72 @@ class Game:
         all vertices and edges that this player has built on. The subgraph has at most 2 components.
         """
         return self.board.vertex_graph.subgraph(
-            [x.vertex_id for x in self.player_buildings[player.player_id]])
+            [x.vertex_id for x in self.player_buildings[player.id]])
 
-    def get_available_road_spots(self, player_id: int) -> List[Edge]:
-        """
-        Given a player, return all edges that this player can build a road on.
-        """
+    def get_available_road_spots(self, player_id: int) -> list[Edge]:
+        """Given a player, return all edges that this player can build a road on."""
         res = []
         for edge in self.board.vertex_graph.edges:
             edge_obj = self.board.get_edge_from_graph_edge(edge)
             if edge_obj.player_road_id != -1:
                 continue
             v1, v2 = self.board.vertex_objects[edge[0]], self.board.vertex_objects[edge[1]]
-            if v1.player_id == player_id or v2.player_id == player_id:
+            if self.is_game_start:
+                can_build = v1.player_id == player_id or v2.player_id == player_id
+            else:
+                can_build = (self._can_build_road_from_vertex(player_id, v1)
+                             or self._can_build_road_from_vertex(player_id, v2))
+            if can_build:
                 res.append(edge_obj)
-                continue
         return res
 
-    def get_available_settlement_spots(self, player_id: int) -> List[Vertex]:
+    def _can_build_road_from_vertex(self, player_id: int, vertex: Vertex) -> bool:
+        if vertex.player_id == player_id:
+            return True
+        if vertex.player_id != -1:
+            return False
+        return any(edge.player_road_id == player_id for edge in self.board.get_edges_from_vertex(vertex))
+
+    def _player_must_discard(self, player: Player) -> bool:
+        baseline = player.start_of_turn_hand_count
+        return baseline > 7 and player.total_resource_count() > baseline - baseline // 2
+
+    def _all_required_discards_complete(self) -> bool:
+        return not any(self._player_must_discard(player) for player in self.players)
+
+    def get_available_settlement_spots(self, player_id: int) -> list[Vertex]:
         """
-        Given a player, return all vertices that this player can build a settlement on.
-        When is_setup_phase is True, the player is only bound by the "must not be adjacent to another settlement" build
-        rule, and not the "must be adjacent to one of your roads" build rule.
+        Return all vertices that this player can build a settlement on.
+        During setup, only the distance rule applies. Otherwise, must also be adjacent to own road.
         """
         res = []
         for vertex in self.board.vertex_graph.nodes:
             vertex_obj = self.board.vertex_objects[vertex]
             if vertex_obj.player_id != -1:
                 continue
-            for neighbor in self.board.vertex_graph.neighbors(vertex):
-                neighbor_obj = self.board.vertex_objects[neighbor]
-                if neighbor_obj.player_id != -1:
-                    break
-            else:
-                if self.is_game_start:
-                    res.append(vertex_obj)
-                else:
-                    for edge_obj in self.board.get_edges_from_vertex(vertex_obj):
-                        if edge_obj.player_road_id == player_id:
-                            res.append(vertex_obj)
-                            break
+            if any(self.board.vertex_objects[n].player_id != -1
+                   for n in self.board.vertex_graph.neighbors(vertex)):
+                continue
+            if self.is_game_start:
+                res.append(vertex_obj)
+            elif any(e.player_road_id == player_id
+                     for e in self.board.get_edges_from_vertex(vertex_obj)):
+                res.append(vertex_obj)
         return res
 
     def advance_turn(self) -> int:
         return self.advance_turn_setup() if self.is_game_start else self.advance_turn_non_setup()
 
     def advance_turn_non_setup(self) -> int:
-        """
-        Start the turn of the next player, and return that player ID.
-        """
+        """Start the turn of the next player, and return that player ID."""
         self.current_turn_idx = (self.current_turn_idx + 1) % self.num_players
         return self.turn_order[self.current_turn_idx]
 
     def advance_turn_setup(self) -> int:
-        """
-        Start the setup turn of the next player, and return that player ID.
-        """
+        """Start the setup turn of the next player, and return that player ID."""
         if self.current_setup_turn_idx + 1 == len(self.setup_turn_order):
-            # end the setup phase
             self.is_game_start = False
-            return self.current_turn_idx
+            return self.turn_order[self.current_turn_idx]
         self.current_setup_turn_idx += 1
         return self.setup_turn_order[self.current_setup_turn_idx]
 
@@ -281,14 +247,228 @@ class Game:
         assert player_id != 0
         return self.agents[player_id]
 
-    def get_players(self) -> List[Player]:
+    def get_players(self) -> list[Player]:
         return self.players
 
     def set_robber_tile(self, tile: Tile):
         self.robber_tile = tile
 
+    def get_legal_actions(self, player_id: int) -> list[Action]:
+        """Returns all legal actions for the given player in the current game state."""
+        player = self.get_player(player_id)
 
-if __name__ == "__main__":
-    game = Game()
-    gw = GameWindow(game)
-    gw.draw()
+        # Discard (any player may need to discard after a 7 is rolled)
+        # TODO: track per-player discard obligations in persistent game state.
+        if self.seven_rolled_this_turn:
+            if self._player_must_discard(player):
+                return [Action(ActionType.DISCARD, Resource(i))
+                        for i in range(5) if player.resources[i] > 0]
+            if not self._all_required_discards_complete():
+                return []
+
+        if self.current_turn != player_id:
+            if self.current_trade_on_table and self.current_trade_on_table[1] == player_id:
+                return [Action(ActionType.RESPOND_TO_TRADE, True),
+                        Action(ActionType.RESPOND_TO_TRADE, False)]
+            return []
+
+        # Must roll first
+        if not self.dice_rolled_this_turn:
+            return [Action(ActionType.ROLL_DICE)]
+
+        # Must move robber after rolling 7
+        if self.seven_rolled_this_turn and not self.robber_moved_this_turn:
+            return [Action(ActionType.MOVE_ROBBER, t) for t in self.board.ordered_tiles
+                    if t != self.robber_tile and t.resource != Resource.WATER]
+
+        # Must steal after moving robber
+        if self.robber_moved_this_turn and not self.stole_this_turn:
+            steal_actions = [Action(ActionType.STEAL, p.id)
+                            for p in self.get_players_on_tile(self.robber_tile)
+                            if p.id != player_id and p.total_resource_count() > 0]
+            if steal_actions:
+                return steal_actions
+
+        # Normal turn actions
+        actions = [Action(ActionType.END_TURN)]
+
+        if player.can_buy_dev_card() and self.remaining_dev_cards > 0:
+            actions.append(Action(ActionType.BUY_DEV_CARD))
+
+        if player.can_build_road():
+            actions.extend(Action(ActionType.BUILD_ROAD, e)
+                           for e in self.get_available_road_spots(player_id))
+
+        if player.can_build_settlement():
+            actions.extend(Action(ActionType.BUILD_SETTLEMENT, v)
+                           for v in self.get_available_settlement_spots(player_id))
+
+        if player.can_build_city():
+            actions.extend(Action(ActionType.BUILD_CITY, v)
+                           for v in self.board.ordered_vertices
+                           if v.player_id == player_id and not v.is_city)
+
+        if not self.dev_card_played_this_turn and player.start_of_turn_dev_card_count > 0:
+            actions.extend(Action(ActionType.PLAY_DEV_CARD, Development(i))
+                           for i in range(4)
+                           if player.dev_cards[i] - self.num_dev_cards_bought_this_turn[i] > 0)
+
+        for i in range(5):
+            if player.resources[i] >= player.resource_exchange_rate[Resource(i)]:
+                actions.extend(Action(ActionType.EXCHANGE_RESOURCE, (Resource(i), Resource(j)))
+                               for j in range(5)
+                               if i != j and self.remaining_resource(Resource(j)) > 0)
+
+        if self.trades_proposed_this_turn < MAX_TRADE_PROPOSALS:
+            actions.append(Action(ActionType.PROPOSE_TRADE))
+
+        return actions
+
+    def get_legal_setup_actions(self, player_id: int) -> list[Action]:
+        """Returns legal actions during the setup phase."""
+        if player_id != self.current_turn:
+            return []
+        # Players alternate settlement → road; road needed when settlements > roads
+        if len(self.player_buildings[player_id]) > len(self.player_roads[player_id]):
+            spots = self.get_available_road_spots(player_id)
+            return [Action(ActionType.BUILD_ROAD, e) for e in spots]
+        else:
+            spots = self.get_available_settlement_spots(player_id)
+            return [Action(ActionType.BUILD_SETTLEMENT, v) for v in spots]
+
+    def apply_action(self, player_id: int, action: Action):
+        """
+        Apply a single action for a player. Dispatches to internal methods.
+        Raises IllegalActionError if the action is not legal.
+        """
+        if self.is_game_start:
+            legal = self.get_legal_setup_actions(player_id)
+        else:
+            legal = self.get_legal_actions(player_id)
+
+        # Validate action is legal (check type and target match)
+        action_legal = any(
+            a.action_type == action.action_type and a.target == action.target
+            for a in legal
+        )
+        if not action_legal:
+            raise IllegalActionError(
+                f"Action {action} is not legal for player {player_id} in current state.")
+
+        if action.action_type == ActionType.ROLL_DICE:
+            self._apply_roll(player_id)
+        elif action.action_type == ActionType.BUILD_SETTLEMENT:
+            self.build_settlement(player_id, action.target)
+        elif action.action_type == ActionType.BUILD_ROAD:
+            self.build_road(player_id, action.target)
+            # TODO: award longest road via board.check_longest_road (never called yet).
+            if self.is_game_start:
+                self.advance_turn()
+        elif action.action_type == ActionType.BUILD_CITY:
+            self.build_city(player_id, action.target)
+        elif action.action_type == ActionType.BUY_DEV_CARD:
+            self._apply_buy_dev_card(player_id)
+        elif action.action_type == ActionType.PLAY_DEV_CARD:
+            self._apply_play_dev_card(player_id, action.target)
+        elif action.action_type == ActionType.EXCHANGE_RESOURCE:
+            self._apply_exchange_resource(player_id, action.target[0], action.target[1])
+        elif action.action_type == ActionType.MOVE_ROBBER:
+            self._apply_move_robber(action.target)
+        elif action.action_type == ActionType.STEAL:
+            self._apply_steal(player_id, action.target)
+        elif action.action_type == ActionType.DISCARD:
+            self._apply_discard(player_id, action.target)
+        elif action.action_type == ActionType.END_TURN:
+            self._apply_end_turn()
+        elif action.action_type == ActionType.RESPOND_TO_TRADE:
+            self._apply_respond_to_trade(player_id, action.target)
+        elif action.action_type == ActionType.PROPOSE_TRADE:
+            # TODO: stub — build a TradeProposal and set current_trade_on_table.
+            self.trades_proposed_this_turn += 1
+        else:
+            raise NotImplementedError(f"Unhandled action type: {action.action_type}")
+
+    def _apply_roll(self, player_id: int):
+        self.dice_rolled_this_turn = True
+        roll_val = self.rng.randrange(1, 7) + self.rng.randrange(1, 7)
+        if roll_val == 7:
+            self.seven_rolled_this_turn = True
+            for player in self.players:
+                player.start_of_turn_hand_count = player.total_resource_count()
+        else:
+            producing_tiles = self.board.get_tiles_with_chit(roll_val)
+            self.pay_out_resources(producing_tiles)
+
+    def _apply_buy_dev_card(self, player_id: int):
+        player = self.get_player(player_id)
+        player.resources[Resource.GRAIN] -= 1
+        player.resources[Resource.WOOL] -= 1
+        player.resources[Resource.ORE] -= 1
+        self._refund_to_bank({Resource.GRAIN: 1, Resource.WOOL: 1, Resource.ORE: 1})
+        card = self.development_cards[self.dev_card_idx]
+        self.dev_card_idx += 1
+        player.dev_cards[card] += 1
+        self.num_dev_cards_bought_this_turn[card] += 1
+        if card == Development.VICTORY_POINT:
+            player.victory_points += 1
+
+    def _apply_play_dev_card(self, player_id: int, dev_card: Development):
+        # TODO: stub — apply KNIGHT/MONOPOLY/YEAR_OF_PLENTY/ROAD_BUILDING effects.
+        player = self.get_player(player_id)
+        player.dev_cards[dev_card] -= 1
+        self.dev_card_played_this_turn = True
+
+    def _apply_exchange_resource(self, player_id: int, resource_given: Resource, resource_received: Resource):
+        player = self.get_player(player_id)
+        rate = player.resource_exchange_rate[resource_given]
+        player.resources[resource_given] -= rate
+        self.resource_cards[resource_given] += rate
+        player.resources[resource_received] += 1
+        self.resource_cards[resource_received] -= 1
+
+    def _apply_move_robber(self, tile: Tile):
+        self.robber_tile.robber = False
+        tile.robber = True
+        self.robber_tile = tile
+        self.robber_moved_this_turn = True
+        # If no valid steal targets exist, skip steal phase immediately
+        stealable = any(p.id != self.current_turn and p.total_resource_count() > 0
+                        for p in self.get_players_on_tile(tile))
+        if not stealable:
+            self.stole_this_turn = True
+
+    def _apply_steal(self, player_id: int, target_player_id: int):
+        player = self.get_player(player_id)
+        target = self.get_player(target_player_id)
+        resource = target.get_random_available_resource(self.rng)
+        if resource is not None:
+            target.take_resource(resource, 1)
+            player.give_resource(resource, 1)
+        self.stole_this_turn = True
+
+    def _apply_discard(self, player_id: int, resource: Resource):
+        player = self.get_player(player_id)
+        player.take_resource(resource, 1)
+        self.resource_cards[resource] += 1
+
+    def _apply_end_turn(self):
+        # TODO: no terminal/win check — end the game when a player reaches 10 VP.
+        self.advance_turn_non_setup()
+        self.dice_rolled_this_turn = False
+        self.robber_moved_this_turn = False
+        self.stole_this_turn = False
+        self.seven_rolled_this_turn = False
+        self.dev_card_played_this_turn = False
+        self.num_dev_cards_bought_this_turn = [0] * 5
+        self.trades_proposed_this_turn = 0
+        self.current_trade_on_table = None
+        # Update start-of-turn tracking for next player
+        next_player = self.get_player(self.current_turn)
+        next_player.start_of_turn_hand_count = next_player.total_resource_count()
+        next_player.start_of_turn_dev_card_count = next_player.total_dev_card_count()
+
+    def _apply_respond_to_trade(self, player_id: int, accept: bool):
+        # TODO: stub — on accept, execute the pending TradeProposal and move resources.
+        if accept and self.current_trade_on_table is not None:
+            pass
+        self.current_trade_on_table = None
